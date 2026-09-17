@@ -30,7 +30,9 @@ async def run_agent(memory: Memory, text: str, history: list[dict[str, str]]) ->
         base_url=settings.ollama_base_url,
         model=settings.ollama_model,
         temperature=0.1,
-        keep_alive=-1,
+        # keep_alive limité : le modèle se décharge 5 min après la dernière
+        # requête pour ne pas affamer la RAM du VPS (Minecraft cohabite ici).
+        keep_alive="5m",
     )
     context = await retrieve_context(memory, text)
     live_result = await infra_live_report(text)
