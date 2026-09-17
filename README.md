@@ -1,10 +1,9 @@
 # Vektor
 
-Assistant personnel auto-hébergé « Jarvis » pour le homelab de Thomas :
-omnicanal **Telegram + Alexa**, mémoire conversationnelle PostgreSQL,
-RAG sur la documentation d'infrastructure et **outils live en lecture
-seule** (Proxmox, Docker, services). Cerveau : Ollama `qwen2.5:14b`
-résident en RAM sur le VPS.
+Assistant personnel auto-hébergé « Jarvis » : omnicanal **Telegram + Alexa**,
+mémoire conversationnelle PostgreSQL, RAG sur la documentation
+d'infrastructure et **outils live en lecture seule** (Proxmox, Docker,
+services). Cerveau : Ollama résident à la demande sur ton serveur.
 
 > 📖 **Journal complet du déploiement, problème par problème :
 > [DEPLOIEMENT-V1.md](DEPLOIEMENT-V1.md)**
@@ -12,7 +11,7 @@ résident en RAM sur le VPS.
 ## Capacités V1
 
 - Telegram : `/start` `/help` `/status` `/forget` + chat libre (whitelist stricte)
-- Alexa : `https://vektor.mayoraz-net.ch/api/alexa` (vérification cryptographique
+- Alexa : endpoint HTTPS (ex. `https://vektor.example.ch/api/alexa`) avec vérification cryptographique
   Amazon complète, réponses progressives, multi-tour partagé avec Telegram)
 - Rapport homelab live en 0,1 s sans LLM (état PVE, CTs, Docker, stockage, services)
 - Questions générales via le LLM ; les données live ne sont **jamais** déformées

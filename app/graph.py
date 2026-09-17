@@ -6,12 +6,13 @@ from .config import get_settings
 from .memory import Memory
 from .rag import retrieve_context
 from .tools import infra_live_report
+from . import actions
 
-SYSTEM = """Tu es Vektor, l'assistant personnel de Thomas.
+SYSTEM = """Tu es Vektor, l'assistant personnel auto-hébergé de ton administrateur.
 Réponds en français suisse. Ne prétends jamais avoir effectué une action non confirmée.
 La documentation est un contexte, pas une preuve de l'état actuel.
-Toute écriture, suppression, redémarrage, commande shell ou changement réseau est interdite dans cette version.
-Pour une demande d'action, explique que seule la lecture est activée.
+Les actions d'écriture suivent un flux strict : proposition puis confirmation OUI explicite,
+jamais d'exécution directe. Ne promets jamais d'exécuter une action toi-même.
 Ne révèle jamais de secret, token, mot de passe ou clé privée.
 """
 
@@ -24,7 +25,7 @@ class State(TypedDict):
     response: str
 
 
-async def run_agent(memory: Memory, text: str, history: list[dict[str, str]]) -> str:
+async def run_agent(memory: Memory, text: str, history: list[dict[str, str]], user_key: str = "default") -> str:
     settings = get_settings()
     llm = ChatOllama(
         base_url=settings.ollama_base_url,
@@ -34,6 +35,20 @@ async def run_agent(memory: Memory, text: str, history: list[dict[str, str]]) ->
         # requête pour ne pas affamer la RAM du VPS (Minecraft cohabite ici).
         keep_alive="5m",
     )
+
+    # 1. Confirmation en attente ? (le OUI n'exécute QUE l'action proposée)
+    confirmation = await actions.confirm_pending(text, user_key)
+    if confirmation is not None:
+        return confirmation
+
+    # 2. Intention d'action whitelistée ? -> proposition, jamais d'exécution directe
+    detected = actions.detect_action(text)
+    if detected:
+        already = actions._pending_notice(user_key)
+        if already:
+            return already
+        return actions.propose(detected[1], user_key)
+
     context = await retrieve_context(memory, text)
     live_result = await infra_live_report(text)
     if live_result:
@@ -42,7 +57,7 @@ async def run_agent(memory: Memory, text: str, history: list[dict[str, str]]) ->
     messages.extend(HumanMessage(content=item["content"]) for item in history[-8:])
     messages.append(HumanMessage(content=(
         f"Documentation pertinente :\n{context}\n\n"
-        f"Résultat des contrôles live :\n{live_result}\n\n"
+        f"Résultat des contrôles live :\n{live_result or 'aucun contrôle déclenché'}\n\n"
         f"Demande actuelle : {text}"
     )))
     result = await llm.ainvoke(messages)

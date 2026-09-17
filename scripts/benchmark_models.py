@@ -15,8 +15,8 @@ import urllib.request
 OLLAMA = "http://127.0.0.1:11434"
 
 CASES = [
-    ("RAG-infra", "Tu es Vektor. Réponds en français, en 2 phrases maximum.\n\nContexte : CT 103 arr-stack 192.168.1.76 héberge Sonarr, Radarr, Prowlarr, Bazarr, qBittorrent et Tdarr.\n\nQuestion : Quel est le rôle du CT 103 et quels services y tournent ?"),
-    ("Diagnostic", "Tu es Vektor. Réponds en français, en 2 phrases maximum.\n\nContexte : Jellyfin tourne sur CT 102 (192.168.1.75:8096). Le swap du serveur est à 42%.\n\nQuestion : Jellyfin rame ce soir, quelles sont les 2 causes les plus probables ?"),
+    ("RAG-infra", "Tu es Vektor. Réponds en français, en 2 phrases maximum.\n\nContexte : CT 103 arr-stack héberge Sonarr, Radarr, Prowlarr, Bazarr, qBittorrent et Tdarr.\n\nQuestion : Quel est le rôle du CT 103 et quels services y tournent ?"),
+    ("Diagnostic", "Tu es Vektor. Réponds en français, en 2 phrases maximum.\n\nContexte : Jellyfin tourne sur CT 102. Le swap du serveur est à 42%.\n\nQuestion : Jellyfin rame ce soir, quelles sont les 2 causes les plus probables ?"),
     ("General", "Tu es Vektor. Réponds en français, en 2 phrases maximum.\n\nQuestion : Explique simplement ce qu'est un VPN à quelqu'un qui n'y connaît rien."),
     ("Suivi-contexte", "Tu es Vektor. Réponds en français, en 1 phrase.\n\nContexte : Le CT 103 héberge Sonarr et Radarr.\n\nQuestion : Et Sonarr, il répond bien en ce moment ?"),
 ]
