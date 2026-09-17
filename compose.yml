@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: vektor-postgres
+    environment:
+      POSTGRES_DB: vektor
+      POSTGRES_USER: vektor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:55432:5432"
+    networks: [vektor]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vektor -d vektor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama-bridge:
+    image: alpine/socat
+    container_name: vektor-ollama-bridge
+    # namespace host : l'upstream NetBird est joignable depuis le host uniquement.
+    # Le bind est limité à la passerelle du bridge Docker (172.20.0.1),
+    # donc joignable des conteneurs mais PAS depuis Internet ni le LAN.
+    network_mode: host
+    command: ["TCP4-LISTEN:11434,bind=172.20.0.1,fork,reuseaddr", "TCP4:${OLLAMA_NETBIRD_HOST}:11434"]
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      network: host
+    container_name: vektor-api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://vektor:${POSTGRES_PASSWORD}@vektor-postgres:5432/vektor
+      OLLAMA_BASE_URL: http://172.20.0.1:11434
+      VEKTOR_API_URL: http://vektor-api:8000/api/chat
+    networks: [caddy_default, vektor]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./secrets:/app/secrets:ro
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  telegram:
+    build:
+      context: .
+      network: host
+    container_name: vektor-telegram
+    command: ["python", "-m", "app.telegram"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://vektor:${POSTGRES_PASSWORD}@vektor-postgres:5432/vektor
+      VEKTOR_API_URL: http://vektor-api:8000/api/chat
+      VEKTOR_STATUS_URL: http://vektor-api:8000/api/status
+      VEKTOR_FORGET_URL: http://vektor-api:8000/api/forget
+    networks: [vektor]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+    profiles: [telegram]
+
+volumes:
+  postgres-data:
+
+networks:
+  vektor:
+    driver: bridge
+  caddy_default:
+    external: true
