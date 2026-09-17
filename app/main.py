@@ -61,7 +61,10 @@ async def chat(request: ChatRequest, x_vektor_token: str | None = Header(default
     )
     await memory.add_message(conversation_id, "user", request.text)
     history = await memory.history(conversation_id)
-    response = await run_agent(memory, request.text, history)
+    # user_key = périmètre des confirmations d'actions (canal:user)
+    response = await run_agent(
+        memory, request.text, history, user_key=f"{request.channel}:{request.user_id}"
+    )
     await memory.add_message(conversation_id, "assistant", response)
     return ChatResponse(response=response, conversation_id=str(conversation_id))
 
@@ -140,6 +143,8 @@ async def alexa_endpoint(request: Request):
     conversation_id = await memory.ensure_conversation(conv_id, user_id, "alexa")
     await memory.add_message(conversation_id, "user", query)
 
+    # Alexa : canal vocal -> AUCUNE action d'écriture (pas de confirmation
+    # orale fiable). Les demandes d'action reçoivent la réponse de refus standard.
     live = await infra_live_report(query)
     if live:
         answer = live

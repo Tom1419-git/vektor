@@ -4,8 +4,8 @@ Assistant personnel auto-hébergé « Jarvis » : omnicanal (Telegram + Alexa),
 conscient de l'infrastructure (RAG + outils live en lecture seule), cerveau
 LLM local (Ollama sur VPS).
 
-- **Bot Telegram** : [t.me/Vektor676767_bot](https://t.me/Vektor676767_bot)
-- **Endpoint Alexa** : `https://vektor.mayoraz-net.ch/api/alexa`
+- **Bot Telegram** : [t.me/<ton-bot-telegram>](https://t.me/<ton-bot-telegram>)
+- **Endpoint Alexa** : `https://vektor.example.ch/api/alexa`
 - **Hébergement** : VPS (`/opt/vektor`), 4 conteneurs Docker
 - **Sécurité** : lecture seule, whitelist stricte, aucun port public inutile
 
@@ -87,7 +87,7 @@ du WAN et du LAN.
 ### Étape 5 — Telegram
 1. Constat : le token fourni au départ était celui du bot d'admin existant
    (`homelab_bot`) → conflit `getUpdates` (un token = un polling).
-2. Création d'un **bot dédié** via @BotFather : `Vektor676767_bot`.
+2. Création d'un **bot dédié** via @BotFather : `<ton-bot-telegram>`.
 3. Piège de saisie : token recopié depuis un screenshot avec un caractère
    ambigu (`V` lu `v`) → `401 Unauthorized`. Toujours coller le token en
    texte, jamais depuis une image.
@@ -136,7 +136,7 @@ du WAN et du LAN.
 3. Réponses **progressives** (`VoicePlayer.Speak` vers l'apiEndpoint
    régional EU de la requête) : le Echo parle pendant que le LLM calcule
    (Alexa coupe à ~8 s sinon). Boucle de phrases toutes les 6 s.
-4. Exposition : DNS `vektor.mayoraz-net.ch` **grey cloud** (obligatoire :
+4. Exposition : DNS `vektor.example.ch` **grey cloud** (obligatoire :
    Amazon refuse le proxy orange de Cloudflare) → Caddy → réseau Docker
    interne. Certificat Let's Encrypt automatique.
 
@@ -149,7 +149,7 @@ du WAN et du LAN.
    `VektorQueryIntent` avec `AMAZON.SearchQuery` **toujours avec carrier
    phrase** — un slot seul est refusé au build) + `AMAZON.FallbackIntent`.
 3. Build → vert.
-4. Endpoint : HTTPS `https://vektor.mayoraz-net.ch/api/alexa`,
+4. Endpoint : HTTPS `https://vektor.example.ch/api/alexa`,
    « certificate from a trusted certificate authority ».
 5. Onglet **Test** → On (sinon invisible sur les appareils).
 6. Distribution : corriger le nom d'invocation affiché (le template

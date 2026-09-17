@@ -3,14 +3,19 @@ import os
 import re
 import httpx
 
-SERVICE_URLS = {
-    "jellyfin": "http://192.168.1.75:8096",
-    "sonarr": "http://192.168.1.76:8989",
-    "radarr": "http://192.168.1.76:7878",
-    "prowlarr": "http://192.168.1.76:9696",
-    "qbittorrent": "http://192.168.1.76:8181",
-    "garmin-map": "http://192.168.1.61:8085",
-}
+
+def _service_urls() -> dict[str, str]:
+    """Services surveillés : config via VEKTOR_SERVICES (format
+    `nom=url,nom=url`). Aucune IP privée n'est codée en dur."""
+    raw = os.environ.get("VEKTOR_SERVICES", "")
+    services: dict[str, str] = {}
+    for item in raw.split(","):
+        if "=" in item:
+            name, url = item.split("=", 1)
+            services[name.strip()] = url.strip()
+    return services
+
+SERVICE_URLS = _service_urls()
 
 PVE_API_URL = os.environ.get("PVE_API_URL", "https://PVE_HOST:8006")
 PVE_API_TOKEN = os.environ.get("PVE_API_TOKEN", "")

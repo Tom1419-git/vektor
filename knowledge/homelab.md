@@ -1,37 +1,31 @@
-# Homelab de Thomas
+# Connaissance Vektor (modèle)
 
-## Proxmox
-- Proxmox est l'hyperviseur physique sur le LAN 192.168.1.60.
-- Son IP NetBird est documentée dans la mémoire privée (agy.md), pas dans ce dépôt.
-- Les actions Proxmox doivent rester en lecture seule par défaut.
+Ce fichier est un **exemple de structure** pour le RAG de Vektor.
+Remplace-le par la documentation de TON infrastructure (topologie, rôles,
+adresses) et garde-la hors de tout dépôt public si elle décrit un réseau
+réel. Sur le déploiement d'origine, ce fichier contient la topologie
+réelle et n'est **pas** versionné publiquement.
 
-## Conteneurs
-- CT 101 network-core : 192.168.1.70, Pi-hole failover et DNS.
-- CT 102 media-gpu-lxc : 192.168.1.75, Jellyfin et Tdarr node GPU.
-- CT 103 arr-stack : 192.168.1.76, Sonarr, Radarr, Prowlarr, Bazarr et qBittorrent.
-- CT 104 tools-lxc : 192.168.1.61, Authelia, SFTPGo, Garmin map et Portainer.
-- CT 105 pihole-dash : 192.168.1.65, dashboard Pi-hole.
-- CT 106 databases : 192.168.1.80, PostgreSQL et Loki.
+## Modèle de contenu recommandé
 
-## Services
-- Jellyfin : 192.168.1.75:8096.
-- Sonarr : 192.168.1.76:8989.
-- Radarr : 192.168.1.76:7878.
-- Prowlarr : 192.168.1.76:9696.
-- qBittorrent : 192.168.1.76:8181.
-- SFTPGo : 192.168.1.61:8090 pour l'interface web.
-- Garmin map : 192.168.1.61:8085.
+### Hyperviseur
+- Nom, accès LAN/VPN, règle « lecture seule par défaut ».
 
-## DNS
-- DNS principal LAN : Raspberry Pi 192.168.1.62.
-- DNS secondaire : CT 101 192.168.1.70.
-- Le DNS local utilise Pi-hole et les deux nœuds doivent rester cohérents.
+### Conteneurs / VMs
+- `CT <id> <rôle> : <adresse>, <services hébergés>`
 
-## VPS
-- Le VPS fournit Caddy, les services publics, le monitoring et Ollama.
-- Ollama est accessible localement sur le VPS et ne doit pas être exposé publiquement sans authentification.
+### Services surveillés
+- `<service> : <adresse:port>` (liste alignée sur VEKTOR_SERVICES)
 
-## Règles opérationnelles
-- Ne jamais supprimer ou redémarrer un service sans confirmation explicite.
-- Vérifier l'état réel avec un outil live au lieu de déduire l'état depuis ce document.
-- Ne jamais stocker de mot de passe, token ou clé privée dans cette base documentaire.
+### DNS
+- DNS principal, DNS secondaire, règle de cohérence.
+
+### VPS
+- Rôle, services publics, règle « aucun port public inutile ».
+
+## Règles intégrées au prompt système
+
+- Ne jamais prétendre avoir effectué une action non confirmée.
+- Les actions d'écriture passent par proposition + confirmation « OUI ».
+- Ne jamais révéler un secret, token, mot de passe ou clé privée.
+- La documentation est un contexte, pas une preuve de l'état actuel.
