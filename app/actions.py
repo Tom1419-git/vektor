@@ -35,6 +35,24 @@ ACTION_PATTERNS: list[tuple[re.Pattern, str]] = [
         re.compile(r"\bred[ée]marr\w*\s+(?:le\s+)?(?:ct|conteneur|lxc)\s*(101|102|103|104|105|106)\b", re.I),
         "lxc_restart_{0}",
     ),
+    # Rescan de bibliothèque Sonarr / Radarr
+    (
+        re.compile(r"\b(?:relance|rerafra[îi]ch\w*|rescan\w*|reindex\w*|re[\s-]?scan\w*)\s+(?:la\s+)?(?:biblioth[èe]que\s+(?:de\s+)?)?(sonarr|radarr)\b", re.I),
+        "{0}_rescan",
+    ),
+    (
+        re.compile(r"\b(?:scan|rerafra[îi]ch|rescan)\w*\s+(?:la\s+)?biblioth[èe]que\b", re.I),
+        "sonarr_rescan",
+    ),
+    # Pause / reprise globale qBittorrent
+    (
+        re.compile(r"\b(?:mets?|stoppe?|arr[êe]te?|pause|sus?pends?)\w*\s+(?:en\s+pause\s+)?(?:tous\s+|les\s+|des\s+|tout(?:es)?\s+)*(?:les\s+|des\s+)?t[ée]l[ée]chargements?\b", re.I),
+        "qb_pause_103",
+    ),
+    (
+        re.compile(r"\b(?:reprends?|relance|r[ée]active|red[ée]marre?)\w*\s+(?:tous\s+|les\s+|des\s+|tout(?:es)?\s+)*(?:les\s+|des\s+)?t[ée]l[ée]chargements?\b", re.I),
+        "qb_resume_103",
+    ),
 ]
 
 # Timeout de confirmation : la proposition expire (évite un OUI tardif qui
@@ -69,6 +87,14 @@ def propose(action: str, user_key: str) -> str:
         human = f"redémarrage du conteneur `{name}` (CT {ct})"
     elif action.startswith("lxc_restart_"):
         human = f"redémarrage du LXC CT {action[len('lxc_restart_'):]}"
+    elif action.endswith("_rescan"):
+        app = action[: -len("_rescan")]
+        pretty = "Sonarr" if app == "sonarr" else "Radarr"
+        human = f"rescan de la bibliothèque {pretty} (CT 103)"
+    elif action == "qb_pause_103":
+        human = "pause de TOUS les téléchargements qBittorrent (CT 103)"
+    elif action == "qb_resume_103":
+        human = "reprise de TOUS les téléchargements qBittorrent (CT 103)"
     else:
         human = action
     return (

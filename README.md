@@ -10,13 +10,17 @@ services). Cerveau : Ollama résident à la demande sur ton serveur.
 
 ## Capacités V1
 
-- Telegram : `/start` `/help` `/status` `/forget` + chat libre (whitelist stricte)
+- Telegram : `/start` `/help` `/status` `/model` `/forget` + chat libre (whitelist stricte)
 - Alexa : endpoint HTTPS (ex. `https://vektor.example.ch/api/alexa`) avec vérification cryptographique
   Amazon complète, réponses progressives, multi-tour partagé avec Telegram)
 - Rapport homelab live en 0,1 s sans LLM (état PVE, CTs, Docker, stockage, services)
 - Questions générales via le LLM ; les données live ne sont **jamais** déformées
   par le modèle (renvoyées telles quelles)
-- Sécurité : lecture seule, aucun shell générique, SSH à commande forcée,
+- Actions d'écriture **à double confirmation** (proposition → `OUI` explicite,
+  TTL 2 min) : redémarrage Jellyfin, redémarrage d'un LXC, rescan de bibliothèque
+  Sonarr/Radarr, pause/reprise globale qBittorrent
+- Sécurité : lecture seule par défaut, aucun shell générique, SSH à commande forcée
+  avec whitelist fermée (les 6 actions ci-dessus sont les seules exécutables),
   secrets hors Git, API non exposée publiquement
 
 ## Déploiement

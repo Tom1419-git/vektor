@@ -49,6 +49,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Exemples :\n"
             "- Quel est le rôle du CT 103 ?\n"
             "- Vérifie si Jellyfin répond\n"
+            "- rescan la bibliothèque sonarr\n"
+            "- mets les téléchargements en pause\n"
             "- Explique-moi le DNS du réseau"
         )
 
