@@ -10,7 +10,7 @@ from .config import get_settings
 from .memory import Memory
 from .rag import index_knowledge
 from .graph import run_agent
-from .tools import full_status_report, infra_live_report
+from .tools import full_status_report, infra_live_report, model_card
 from . import alexa as alexa_mod
 
 memory = Memory()
@@ -174,6 +174,13 @@ async def alexa_endpoint(request: Request):
         reprompt="Autre chose ?",
         session_attributes={**session_attrs, "conversation_id": str(conversation_id)},
     )
+
+
+@app.get("/api/model")
+async def model_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """Fiche technique réelle : modèle, hardware, latence. Aucun appel LLM."""
+    require_token(x_vektor_token)
+    return {"card": await model_card()}
 
 
 @app.get("/api/status")

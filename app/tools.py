@@ -3,7 +3,6 @@ import os
 import re
 import httpx
 
-
 def _service_urls() -> dict[str, str]:
     """Services surveillés : config via VEKTOR_SERVICES (format
     `nom=url,nom=url`). Aucune IP privée n'est codée en dur."""
@@ -15,6 +14,7 @@ def _service_urls() -> dict[str, str]:
             services[name.strip()] = url.strip()
     return services
 
+
 SERVICE_URLS = _service_urls()
 
 PVE_API_URL = os.environ.get("PVE_API_URL", "https://PVE_HOST:8006")
@@ -23,12 +23,107 @@ PVE_VERIFY_SSL = os.environ.get("PVE_VERIFY_SSL", "0") == "1"
 PVE_SSH_HOST = os.environ.get("PVE_SSH_HOST", "PVE_HOST")
 PVE_SSH_USER = os.environ.get("PVE_SSH_USER", "root")
 PVE_SSH_KEY = os.environ.get("PVE_SSH_KEY", "/app/secrets/vektor_pve_ed25519")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://172.20.0.1:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
+
+# Latences LLM réelles (secondes), in-memory, fenêtre glissante :
+# alimenté par graph.py à chaque vraie inférence, lu par model_card().
+LLM_LATENCIES: list[float] = []
+_LLM_LATENCY_WINDOW = 20
 
 
 def _fmt_gib(num_bytes: float | None) -> str:
     if num_bytes is None:
         return "?"
     return f"{num_bytes / 2**30:.1f}G"
+
+
+def record_llm_latency(seconds: float) -> None:
+    """Mémorise une latence d'inférence réelle (fenêtre glissante)."""
+    LLM_LATENCIES.append(seconds)
+    del LLM_LATENCIES[:-_LLM_LATENCY_WINDOW]
+
+
+def _host_hw_facts() -> dict:
+    """Lecture /proc : le noyau et la RAM visibles sont ceux du host."""
+    facts: dict = {"cores": "?", "ram_gib": "?", "cpu_pct": None}
+    try:
+        facts["cores"] = str(os.cpu_count() or "?")
+        with open("/proc/meminfo") as fh:
+            for line in fh:
+                if line.startswith("MemTotal:"):
+                    facts["ram_gib"] = f"{int(line.split()[1]) / 2**20:.0f}"
+                    break
+
+        def _cpu_times() -> tuple[int, int] | None:
+            with open("/proc/stat") as fh:
+                for line in fh:
+                    if line.startswith("cpu "):
+                        vals = [int(v) for v in line.split()[1:8]]
+                        return sum(vals), vals[3] + vals[4]
+            return None
+
+        first = _cpu_times()
+        if first:
+            import time as _time
+            _time.sleep(0.3)
+            second = _cpu_times()
+            if second and second[0] > first[0]:
+                idle_ratio = (second[1] - first[1]) / (second[0] - first[0])
+                facts["cpu_pct"] = max(0.0, (1 - idle_ratio) * 100)
+    except (OSError, ValueError):
+        pass
+    return facts
+
+
+async def model_card() -> str:
+    """Fiche technique réelle : modèle Ollama, hardware, latence mesurée.
+    Données brutes des API Ollama et de /proc — aucun appel LLM."""
+    lines: list[str] = ["🧠 **VEKTOR — Fiche technique**", f"\n🤖 **Modèle** : {OLLAMA_MODEL} via Ollama"]
+
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            show_response = await client.post(f"{OLLAMA_BASE_URL}/api/show", json={"name": OLLAMA_MODEL})
+            ps_response = await client.get(f"{OLLAMA_BASE_URL}/api/ps")
+        show = show_response.json() if show_response.status_code == 200 else {}
+        running = ps_response.json() if ps_response.status_code == 200 else {}
+    except (httpx.HTTPError, ValueError):
+        return "\n".join(lines) + "\n\n🔴 Ollama injoignable — fiche détaillée indisponible."
+
+    details = show.get("details", {}) or {}
+    if details:
+        lines.append(
+            f"• famille {details.get('family', '?')}, "
+            f"{details.get('parameter_size', '?')} paramètres, "
+            f"quantification {details.get('quantization_level', '?')}"
+        )
+
+    loaded = next(
+        (m for m in running.get("models", []) if str(m.get("name", "")).startswith(OLLAMA_MODEL.split(":")[0])),
+        None,
+    )
+    if loaded:
+        size_gib = (loaded.get("size") or 0) / 2**30
+        lines.append(f"• état : **chargé en RAM** ({size_gib:.1f}G), réponses rapides")
+    else:
+        lines.append("• état : non chargé (rechargement ~1 min au prochain message LLM)")
+
+    hw = _host_hw_facts()
+    cpu_now = f", usage CPU {hw['cpu_pct']:.0f}% à l'instant" if hw["cpu_pct"] is not None else ""
+    lines.append(f"\n💻 **Hardware (host)** : {hw['cores']} cœurs, {hw['ram_gib']}G RAM{cpu_now}")
+
+    if LLM_LATENCIES:
+        avg = sum(LLM_LATENCIES) / len(LLM_LATENCIES)
+        lines.append(
+            f"\n⏱️ **Latence LLM** : {avg:.1f}s en moyenne sur les {len(LLM_LATENCIES)} "
+            "dernières réponses générées (les contrôles live restent instantanés)"
+        )
+    else:
+        lines.append("\n⏱️ **Latence LLM** : pas encore de mesure depuis le dernier redémarrage")
+
+    lines.append("\n📡 **Canaux** : Telegram (texte, actions avec confirmation OUI) · Alexa (vocal, lecture seule)")
+    lines.append("🔒 **Périmètre** : lecture seule sur l'infra, écriture uniquement après OUI explicite")
+    return "\n".join(lines)
 
 
 async def _pve_get(path: str):
