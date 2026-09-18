@@ -1,11 +1,13 @@
 from typing import TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
+import time
+
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 from .config import get_settings
 from .memory import Memory
 from .rag import retrieve_context
-from .tools import infra_live_report
+from .tools import infra_live_report, record_llm_latency
 from . import actions
 
 SYSTEM = """Tu es Vektor, l'assistant personnel de Thomas.
@@ -64,7 +66,12 @@ async def run_agent(memory: Memory, text: str, history: list[dict[str, str]], us
         f"Résultat des contrôles live :\n{live_result or 'aucun contrôle déclenché'}\n\n"
         f"Demande actuelle : {text}"
     )))
-    result = await llm.ainvoke(messages)
+    inf_start = time.perf_counter()
+    try:
+        result = await llm.ainvoke(messages)
+    finally:
+        # Latence d'inférence réelle, affichée par la fiche /model
+        record_llm_latency(time.perf_counter() - inf_start)
     return result.content
 
 
