@@ -53,6 +53,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "- Vérifie si Jellyfin répond\n"
             "- rescan la bibliothèque sonarr\n"
             "- mets les téléchargements en pause\n"
+            "- redémarre tdarr\n"
             "- Explique-moi le DNS du réseau"
         )
 
