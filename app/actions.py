@@ -31,6 +31,11 @@ ACTION_PATTERNS: list[tuple[re.Pattern, str]] = [
         re.compile(r"\bred[ée]marr\w*\s+(?:le\s+)?(?:conteneur\s+|container\s+)?jellyfin\b", re.I),
         "docker_restart_102_jellyfin",
     ),
+    # Redémarrage Tdarr (transcodage) — libère la charge disque/CPU du PVE
+    (
+        re.compile(r"\bred[ée]marr\w*\s+(?:le\s+)?(?:serveur\s+|n[oe]ud\s+|node\s+|conteneur\s+|transcodage\s+)?tdarr\b", re.I),
+        "docker_restart_102_tdarr-node",
+    ),
     (
         re.compile(r"\bred[ée]marr\w*\s+(?:le\s+)?(?:ct|conteneur|lxc)\s*(101|102|103|104|105|106)\b", re.I),
         "lxc_restart_{0}",

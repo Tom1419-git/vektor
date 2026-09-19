@@ -20,10 +20,10 @@ services). Cerveau : Ollama résident à la demande sur ton serveur.
 - Questions générales via le LLM ; les données live ne sont **jamais** déformées
   par le modèle (renvoyées telles quelles)
 - Actions d'écriture **à double confirmation** (proposition → `OUI` explicite,
-  TTL 2 min) : redémarrage Jellyfin, redémarrage d'un LXC, rescan de bibliothèque
-  Sonarr/Radarr, pause/reprise globale qBittorrent
+  TTL 2 min) : redémarrage Jellyfin, redémarrage Tdarr, redémarrage d'un LXC,
+  rescan de bibliothèque Sonarr/Radarr, pause/reprise globale qBittorrent
 - Sécurité : lecture seule par défaut, aucun shell générique, SSH à commande forcée
-  avec whitelist fermée (les 6 actions ci-dessus sont les seules exécutables),
+  avec whitelist fermée (les 7 actions ci-dessus sont les seules exécutables),
   secrets hors Git, API non exposée publiquement
 
 ## Déploiement
