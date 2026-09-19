@@ -10,10 +10,13 @@ services). Cerveau : Ollama résident à la demande sur ton serveur.
 
 ## Capacités V1
 
-- Telegram : `/start` `/help` `/status` `/model` `/forget` + chat libre (whitelist stricte)
+- Telegram : `/start` `/help` `/status` `/model` `/seeds` `/forget` + chat libre (whitelist stricte)
 - Alexa : endpoint HTTPS (ex. `https://vektor.example.ch/api/alexa`) avec vérification cryptographique
   Amazon complète, réponses progressives, multi-tour partagé avec Telegram)
 - Rapport homelab live en 0,1 s sans LLM (état PVE, CTs, Docker, stockage, services)
+- `/seeds` : top 10 torrents en seed par ratio (qBittorrent live) + espace staging
+  récupérable (fichiers non hardlinkés, calculé côté PVE et mis en cache 24 h —
+  le premier scan tourne en arrière-plan, réponse toujours immédiate)
 - Questions générales via le LLM ; les données live ne sont **jamais** déformées
   par le modèle (renvoyées telles quelles)
 - Actions d'écriture **à double confirmation** (proposition → `OUI` explicite,
@@ -47,7 +50,7 @@ docker compose --profile telegram up -d telegram
 ## Canaux Proxmox lecture seule (installés)
 
 - **API PVE** : token dédié `vektor-ro@pve!vektor` (rôle PVEAuditor, `privsep 0` pour hériter du rôle). Sources : node (CPU, RAM, swap, uptime), CTs, stockages.
-- **Canal SSH à commande forcée** : clé ed25519 dédiée dont la ligne `authorized_keys` impose `command="/usr/local/bin/vektor-status"` + `no-pty,no-port-forwarding`. Le script statique sur le PVE renvoie CTs + inventaire Docker + pression mémoire (`memory.peak`). La clé ne peut exécuter AUCUNE autre commande (testé : une commande arbitraire est silencieusement remplacée par le script).
+- **Canal SSH à commande forcée** : clé ed25519 dédiée dont la ligne `authorized_keys` impose `command="/usr/local/bin/vektor-status"` + `no-pty,no-port-forwarding`. Le script statique sur le PVE renvoie CTs + inventaire Docker + pression mémoire (`memory.peak`), et dispatche `vektor-status seeds` vers le rapport de seeding (lecture seule : stats qBittorrent + cache staging). La clé ne peut exécuter AUCUNE autre commande (testé : une commande arbitraire est silencieusement remplacée par le script).
 - Montage `./secrets:/app/secrets:ro`, clé possédée par l uid du conteneur (10001).
 
 ## Prochaine étape

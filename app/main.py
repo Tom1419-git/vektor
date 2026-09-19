@@ -10,7 +10,7 @@ from .config import get_settings
 from .memory import Memory
 from .rag import index_knowledge
 from .graph import run_agent
-from .tools import full_status_report, infra_live_report, model_card
+from .tools import full_status_report, infra_live_report, model_card, seeds_report
 from . import alexa as alexa_mod
 
 memory = Memory()
@@ -181,6 +181,13 @@ async def model_endpoint(x_vektor_token: str | None = Header(default=None)):
     """Fiche technique réelle : modèle, hardware, latence. Aucun appel LLM."""
     require_token(x_vektor_token)
     return {"card": await model_card()}
+
+
+@app.get("/api/seeds")
+async def seeds_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """Rapport seeds : qBittorrent live + staging récupérable. Lecture seule."""
+    require_token(x_vektor_token)
+    return {"report": await seeds_report()}
 
 
 @app.get("/api/status")

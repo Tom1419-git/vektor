@@ -19,6 +19,7 @@ ALLOWED = {
 API_URL = os.environ.get("VEKTOR_API_URL", "http://127.0.0.1:8000/api/chat")
 STATUS_URL = os.environ.get("VEKTOR_STATUS_URL", "http://127.0.0.1:8000/api/status")
 MODEL_URL = os.environ.get("VEKTOR_MODEL_URL", "http://127.0.0.1:8000/api/model")
+SEEDS_URL = os.environ.get("VEKTOR_SEEDS_URL", "http://127.0.0.1:8000/api/seeds")
 FORGET_URL = os.environ.get("VEKTOR_FORGET_URL", "http://127.0.0.1:8000/api/forget")
 API_TOKEN = os.environ.get("VEKTOR_API_TOKEN", "")
 HEADERS = {"X-Vektor-Token": API_TOKEN}
@@ -44,6 +45,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/start : vérifier que je réponds\n"
             "/status : rapport homelab complet en direct\n"
             "/model : ma fiche technique (modèle, hardware, latence)\n"
+            "/seeds : top seeding qBittorrent + espace staging récupérable\n"
             "/help : cette aide\n"
             "/forget : effacer toute ma mémoire de conversation\n\n"
             "Exemples :\n"
@@ -85,6 +87,23 @@ async def model_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("La fiche technique est indisponible (API).")
         return
     await send_long(update.message, response.json()["card"])
+
+
+async def seeds_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Rapport seeds : stats qBittorrent + staging récupérable — sans LLM."""
+    if not is_allowed(update) or not update.message:
+        return
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get(SEEDS_URL, headers=HEADERS)
+    except httpx.HTTPError:
+        await update.message.reply_text("Impossible de générer le rapport seeds (API).")
+        return
+    if response.status_code != 200:
+        await update.message.reply_text("Le rapport seeds est indisponible (API).")
+        return
+    await send_long(update.message, response.json()["report"])
 
 
 async def forget(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,6 +154,7 @@ async def post_init(application: Application) -> None:
             BotCommand("help", "Liste des commandes et exemples"),
             BotCommand("status", "Rapport homelab complet en direct"),
             BotCommand("model", "Fiche technique de Vektor (modèle, hardware, latence)"),
+            BotCommand("seeds", "Top seeding qBittorrent + espace staging récupérable"),
             BotCommand("forget", "Effacer la mémoire des conversations"),
         ]
     )
@@ -148,6 +168,7 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("help", help_cmd))
     application.add_handler(CommandHandler("status", status_cmd))
     application.add_handler(CommandHandler("model", model_cmd))
+    application.add_handler(CommandHandler("seeds", seeds_cmd))
     application.add_handler(CommandHandler("forget", forget))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.run_polling(allowed_updates=Update.ALL_TYPES)

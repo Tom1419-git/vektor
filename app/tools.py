@@ -219,7 +219,10 @@ async def pve_storage_status() -> str:
     return "\n".join(lines)
 
 
-async def docker_inventory() -> str:
+async def _status_channel(remote_cmd: str) -> str:
+    """Canal SSH lecture seule du PVE : commande fermee (vektor-status [*]).
+    La cle ne peut lancer que /usr/local/bin/vektor-status, qui refuse tout
+    argument autre que ceux prevus."""
     if not os.path.exists(PVE_SSH_KEY):
         return "Canal SSH lecture seule non configuré."
     try:
@@ -231,7 +234,7 @@ async def docker_inventory() -> str:
             "-o", "UserKnownHostsFile=/tmp/known_hosts",
             "-o", "ConnectTimeout=15",
             f"{PVE_SSH_USER}@{PVE_SSH_HOST}",
-            "vektor-status",
+            remote_cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -240,6 +243,16 @@ async def docker_inventory() -> str:
         return "Canal SSH lecture seule indisponible pour le moment."
     text = stdout.decode(errors="replace").strip()
     return text if text else "Sortie vide du canal lecture seule."
+
+
+async def docker_inventory() -> str:
+    return await _status_channel("vektor-status")
+
+
+async def seeds_report() -> str:
+    """Rapport seeds : stats qBittorrent live + staging récupérable (cache).
+    Lecture seule, aucun LLM, aucune écriture."""
+    return await _status_channel("vektor-status seeds")
 
 
 async def check_service(name: str) -> str:
