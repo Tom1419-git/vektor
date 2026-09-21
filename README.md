@@ -1,9 +1,49 @@
 # Vektor
 
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)
+![Ollama](https://img.shields.io/badge/LLM-Ollama-FFFFFF?logo=ollama&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
+
 Assistant personnel auto-hébergé « Jarvis » : omnicanal **Telegram + Alexa**,
 mémoire conversationnelle PostgreSQL, RAG sur la documentation
 d'infrastructure et **outils live en lecture seule** (Proxmox, Docker,
 services). Cerveau : Ollama résident à la demande sur ton serveur.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Clients
+        TG["📱 Telegram"]
+        AX["🔊 Alexa"]
+    end
+
+    subgraph Serveur["🧠 Serveur Vektor (Docker)"]
+        API["FastAPI\n/api/telegram · /api/alexa"]
+        ORCH["Orchestrateur\nLangChain"]
+        LLM["LLM\nOllama"]
+        RAG["RAG\nknowledge/ + pgvector"]
+        TOOLS["Outils lecture seule\nAPI Proxmox · SSH forcé"]
+    end
+
+    subgraph Homelab["🏠 Homelab"]
+        PVE["Proxmox VE\nCTs · Docker · stockage"]
+    end
+
+    subgraph Memo["💾 Mémoire"]
+        PG[("PostgreSQL\nhistorique + contexte")]
+    end
+
+    TG -->|webhook| API
+    AX -->|POST signé Amazon| API
+    API --> ORCH
+    ORCH --> RAG
+    ORCH --> LLM
+    ORCH --> TOOLS
+    TOOLS -->|API 8006 + SSH à commande forcée| PVE
+    ORCH <--> PG
+```
 
 > 📖 **Journal complet du déploiement, problème par problème :
 > [DEPLOIEMENT-V1.md](DEPLOIEMENT-V1.md)**
