@@ -20,11 +20,11 @@ flowchart LR
     end
 
     subgraph Serveur["🧠 Serveur Vektor (Docker)"]
-        API["FastAPI\n/api/telegram · /api/alexa"]
-        ORCH["Orchestrateur\nLangChain"]
-        LLM["LLM\nOllama"]
-        RAG["RAG\nknowledge/ + pgvector"]
-        TOOLS["Outils lecture seule\nAPI Proxmox · SSH forcé"]
+        API["FastAPI<br/>/api/telegram · /api/alexa"]
+        ORCH["Orchestrateur<br/>LangChain"]
+        LLM["LLM<br/>Ollama"]
+        RAG["RAG<br/>knowledge/ + pgvector"]
+        TOOLS["Outils lecture seule<br/>API Proxmox · SSH forcé"]
     end
 
     subgraph Homelab["🏠 Homelab"]
@@ -32,7 +32,7 @@ flowchart LR
     end
 
     subgraph Memo["💾 Mémoire"]
-        PG[("PostgreSQL\nhistorique + contexte")]
+        PG[("PostgreSQL<br/>historique + contexte")]
     end
 
     TG -->|webhook| API
@@ -41,7 +41,7 @@ flowchart LR
     ORCH --> RAG
     ORCH --> LLM
     ORCH --> TOOLS
-    TOOLS -->|API 8006 + SSH à commande forcée| PVE
+    TOOLS -->|API 8006 + SSH forcé| PVE
     ORCH <--> PG
 ```
 
