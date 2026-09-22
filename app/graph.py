@@ -37,9 +37,10 @@ async def run_agent(memory: Memory, text: str, history: list[dict[str, str]], us
         base_url=settings.ollama_base_url,
         model=settings.ollama_model,
         temperature=0.1,
-        # keep_alive limité : le modèle se décharge 5 min après la dernière
-        # requête pour ne pas affamer la RAM du VPS (Minecraft cohabite ici).
-        keep_alive="5m",
+        # keep_alive 2h : le modèle reste chargé en RAM (9 GB) pour des
+        # réponses immédiates, tout en laissant ~12 GB libres pour
+        # Minecraft et les autres services du VPS.
+        keep_alive="2h",
     )
 
     # 1. Confirmation en attente ? (le OUI n'exécute QUE l'action proposée)
