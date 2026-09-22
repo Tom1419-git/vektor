@@ -270,6 +270,10 @@ async def check_service(name: str) -> str:
 _STATE_WORDS = ["état", "etat", "status", "statut", "tourne", "tournent", "liste",
                 "inventaire", "up", "down", "marche", "santé", "sante"]
 
+# Mots qui signalent une demande de donnée chiffrée ("quel est", "combien de")
+# plutot qu'une explication : déclenchent aussi la collecte live.
+_METRIC_WORDS = ["quel", "quelles", "quels", "combien", "montre", "donne"]
+
 
 _EXPLAIN_WORDS = ["explique", "pourquoi", "comment", "c'est quoi", "qu'est-ce", "qu est ce", "difference", "différence", "définis", "define"]
 
@@ -363,18 +367,21 @@ async def infra_live_report(text: str) -> str | None:
         r"\b(proxmox|pve|docker|conteneur|container|stack|arr|conteneurs?|cts|lxc|disques?|stockage|espace|ram|swap|cpu|charge)\b", low
     ) or name in low for name in SERVICE_URLS)
     state = (any(word in low for word in _STATE_WORDS) or bare_subject) and not is_explanation
+    # "quel est / combien de / quelle est" : une demande de donnée chiffrée,
+    # pas une explication -> déclenche la collecte live comme un mot d'état.
+    wants_metric = any(re.search(rf"\b{w}\b", low) for w in _METRIC_WORDS)
 
     want_node = (re.search(
         r"\b(proxmox|pve|hyperviseur|noeud|node|charge|cpu|swap|uptime)\b", low
-    ) or re.search(r"\bram\b|\bm[ée]moire\b", low)) and (state or full)
+    ) or re.search(r"\bram\b|\bm[ée]moire\b", low)) and (state or wants_metric or full)
     want_cts = bool(
         re.search(r"\bct\s?\d+\b|\bcts\b|\blxc\b", low)
         or ("conteneur" in low and "proxmox" in low)
-    ) and (state or full)
+    ) and (state or wants_metric or full)
     want_docker = ("docker" in low and state) or (
-        re.search(r"\b(conteneurs?|containers?|stacks?|arr)\b", low) and state and not services
+        re.search(r"\b(conteneurs?|containers?|stacks?|arr)\b", low) and (state or wants_metric) and not services
     )
-    want_storage = re.search(r"\b(disque|disques|stockage|espace)\b", low) and (state or full)
+    want_storage = re.search(r"\b(disque|disques|stockage|espace)\b", low) and (state or wants_metric or full)
 
     if full:
         parts.append(await pve_summary())
