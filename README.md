@@ -6,9 +6,28 @@
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
 Assistant personnel auto-hébergé « Jarvis » : omnicanal **Telegram + Alexa**,
-mémoire conversationnelle PostgreSQL, RAG sur la documentation
-d'infrastructure et **outils live en lecture seule** (Proxmox, Docker,
-services). Cerveau : Ollama résident à la demande sur ton serveur.
+mémoire conversationnelle PostgreSQL, RAG sur la documentation d'infrastructure
+et **outils live en lecture seule** (Proxmox, Docker, services).
+Cerveau : **Qwen 2.5 14B** via Ollama, auto-hébergé sur ton propre serveur.
+
+## 🎯 Vektor en bref
+
+Vektor est un assistant qui vit sur ton serveur et te répond sur Telegram comme
+à l'oral via Alexa. **Il est capable de** : te donner l'état réel de ton
+infrastructure en moins d'une seconde (CPU, RAM, stockage, conteneurs, services,
+torrents) sans jamais passer par le LLM pour les chiffres, répondre aux questions
+générales avec un LLM local enrichi de ta documentation et de la mémoire de vos
+conversations passées, et exécuter quelques actions d'administration (redémarrages,
+rescans, pause des téléchargements) toujours après une double confirmation `OUI`.
+**Il n'est pas capable de** : agir en agent autonome (le LLM ne décide rien ni
+n'exécute rien lui-même), faire une action hors de sa whitelist fermée, t'écouter
+en continu hors Alexa, ni servir plusieurs utilisateurs (whitelist stricte,
+mono-propriétaire). C'est un assistant fiable et verrouillé, pas une IA
+omnipotente — c'est un choix de sécurité assumé.
+
+> 📖 **Détail complet des capacités, limitations et latences mesurées :
+> [CAPACITES-V1.md](CAPACITES-V1.md)** — journal du déploiement problème par
+> problème : [DEPLOIEMENT-V1.md](DEPLOIEMENT-V1.md)
 
 ## Architecture
 
@@ -45,54 +64,102 @@ flowchart LR
     ORCH <--> PG
 ```
 
-> 📖 **Journal complet du déploiement, problème par problème :
-> [DEPLOIEMENT-V1.md](DEPLOIEMENT-V1.md)**
-
 ## Capacités V1
 
-- Telegram : `/start` `/help` `/status` `/model` `/seeds` `/forget` + chat libre (whitelist stricte)
-- Alexa : endpoint HTTPS (ex. `https://vektor.example.ch/api/alexa`) avec vérification cryptographique
-  Amazon complète, réponses progressives, multi-tour partagé avec Telegram)
-- Rapport homelab live en 0,1 s sans LLM (état PVE, CTs, Docker, stockage, services)
-- `/seeds` : top 10 torrents en seed par ratio (qBittorrent live) + espace staging
-  récupérable (fichiers non hardlinkés, calculé côté PVE et mis en cache 24 h —
-  le premier scan tourne en arrière-plan, réponse toujours immédiate)
-- Questions générales via le LLM ; les données live ne sont **jamais** déformées
-  par le modèle (renvoyées telles quelles)
-- Actions d'écriture **à double confirmation** (proposition → `OUI` explicite,
+### Deux chemins de réponse : live ou LLM
+
+| Type de question | Chemin | Latence mesurée |
+|---|---|---|
+| Donnée infra chiffrée ("état des CTs", "stockage libre", "quel/combien/montre…") | routeur → API Proxmox / SSH lecture seule, **sans LLM** | **< 1 s** |
+| Question générale courte | Ollama Qwen 2.5 14B | 7 – 15 s |
+| Question complexe / réponse longue | Ollama Qwen 2.5 14B | 15 – 60 s |
+
+Les données live ne sont **jamais** déformées par le modèle : elles sont
+renvoyées telles quelles. Le modèle reste chargé en RAM 2 h (`keep_alive`)
+pour éviter le démarrage à froid.
+
+### Ce qu'il sait faire
+
+- **Infrastructure en temps réel** : CPU/RAM/swap/uptime du nœud Proxmox, liste
+  des CTs (état, RAM, uptime), stockages (alerte au-delà de 90 %), inventaire
+  Docker de tous les conteneurs, statut HTTP des services (Jellyfin, Sonarr,
+  Radarr, Prowlarr, qBittorrent, Garmin Map)
+- **Vie quotidienne** : questions générales en français, mémoire de conversation
+  persistante partagée Telegram ↔ Alexa, `/forget` pour tout effacer
+- **Commandes Telegram** : `/status` (rapport infra complet, sans LLM),
+  `/model` (fiche technique réelle : modèle, matériel, latence moyenne),
+  `/seeds` (top torrents en seed + espace staging récupérable), `/forget`,
+  `/start`, `/help` + chat libre
+- **Actions d'écriture à double confirmation** (proposition → `OUI` explicite,
   TTL 2 min) : redémarrage Jellyfin, redémarrage Tdarr, redémarrage d'un LXC,
-  rescan de bibliothèque Sonarr/Radarr, pause/reprise globale qBittorrent
-- Sécurité : lecture seule par défaut, aucun shell générique, SSH à commande forcée
-  avec whitelist fermée (les 7 actions ci-dessus sont les seules exécutables),
-  secrets hors Git, API non exposée publiquement
+  redémarrage d'un conteneur Docker, rescan de bibliothèque Sonarr/Radarr,
+  pause/reprise globale qBittorrent
+
+### Ce qu'il ne peut pas faire (choix de conception)
+
+- Pas d'agent autonome : le LLM ne choisit ni n'exécute d'outils, le routage
+  vers les données live est déterministe (mots-clés), pas une décision du modèle
+- Whitelist d'actions fermée : "éteins le serveur" ou toute action hors liste
+  est refusée — voulu
+- Pas de voix locale (wake-word, STT/TTS maison) : Alexa est le seul canal vocal
+- Français uniquement, mono-utilisateur assumé
+- Modèle 14B quantifié : raisonnement limité sur les sujets complexes, faits
+  récents susceptibles d'hallucination
 
 ## Déploiement
 
 1. Copier `.env.example` vers `.env`.
 2. Générer un mot de passe PostgreSQL et un token API aléatoire.
-3. Renseigner `POSTGRES_PASSWORD`, `VEKTOR_API_TOKEN`, le modèle Ollama et la whitelist Telegram.
-4. Lancer `docker compose up -d --build`.
-5. Vérifier `curl http://127.0.0.1:8092/health`.
-6. Activer le profil Telegram uniquement après création d’un bot dédié :
+3. Renseigner `POSTGRES_PASSWORD`, `VEKTOR_API_TOKEN`, le modèle Ollama et la
+   whitelist Telegram (user-ids autorisés, séparés par des virgules).
+4. Lancer la stack :
+
+```bash
+docker compose up -d --build
+```
+
+5. Vérifier la santé :
+
+```bash
+curl http://127.0.0.1:8092/health
+```
+
+6. Activer le profil Telegram après création d'un bot dédié (BotFather) :
 
 ```bash
 docker compose --profile telegram up -d telegram
 ```
 
+Pour le canal Alexa : endpoint HTTPS `https://<ton-domaine>/api/alexa` derrière
+reverse proxy, vérification cryptographique Amazon complète (signature, horizon
+temporel, skill ID) — interaction model et démarche détaillés dans
+[DEPLOIEMENT-V1.md](DEPLOIEMENT-V1.md).
+
+## Sécurité
+
+- Telegram : **whitelist stricte par user-id** — personne d'autre ne peut parler au bot
+- Alexa : vérification complète des requêtes Amazon, endpoint derrière HTTPS
+- API interne : authentification par token (`X-Vektor-Token`), non exposée publiquement
+- SSH vers l'hyperviseur : **forced command** — la clé n'exécute qu'un script
+  fermé (`vektor-status` en lecture, `vektor-actions` en écriture), aucune
+  commande libre possible ; les 7 actions de la whitelist sont les seules
+  exécutables, les services critiques (DNS, auth) sont blacklistés
+- Secrets hors Git (`secrets/` monté en lecture seule), prompt système
+  interdisant la révélation de secrets au LLM
+- Canaux Proxmox : API en lecture seule (token dédié, rôle PVEAuditor)
+
 ## Règles
 
 - Ne jamais mettre `.env` dans Git.
-- Ne pas réutiliser le token du bot d’administration existant.
-- Toute action mutante nécessite une future étape de confirmation dédiée.
-- Le RAG fournit un contexte documentaire, mais les états sont vérifiés live.
+- Ne pas réutiliser le token du bot d'administration existant.
+- Le RAG fournit un contexte documentaire ; les états sont vérifiés live.
 - Les secrets et clés privées sont exclus de `knowledge/`.
 
-## Canaux Proxmox lecture seule (installés)
+## Prochaines étapes (V2)
 
-- **API PVE** : token dédié `vektor-ro@pve!vektor` (rôle PVEAuditor, `privsep 0` pour hériter du rôle). Sources : node (CPU, RAM, swap, uptime), CTs, stockages.
-- **Canal SSH à commande forcée** : clé ed25519 dédiée dont la ligne `authorized_keys` impose `command="/usr/local/bin/vektor-status"` + `no-pty,no-port-forwarding`. Le script statique sur le PVE renvoie CTs + inventaire Docker + pression mémoire (`memory.peak`), et dispatche `vektor-status seeds` vers le rapport de seeding (lecture seule : stats qBittorrent + cache staging). La clé ne peut exécuter AUCUNE autre commande (testé : une commande arbitraire est silencieusement remplacée par le script).
-- Montage `./secrets:/app/secrets:ro`, clé possédée par l uid du conteneur (10001).
-
-## Prochaine étape
-
-Ajouter backups, DNS et monitoring en lecture seule via API avec des credentials dédiés aux permissions minimales. Ne jamais ajouter un outil shell générique.
+- Tool-calling natif (LangChain `bind_tools`) pour que le LLM choisisse lui-même
+  quand interroger l'infra, au lieu du routeur par mots-clés
+- RAG enrichi : plusieurs sources, re-ranking, détection « la doc ne répond pas »
+- Écoute continue locale (wake-word openWakeWord + Whisper + Piper sur Raspberry Pi)
+- Backups, DNS et monitoring en lecture seule via API avec credentials dédiés
+  aux permissions minimales — jamais d'outil shell générique
