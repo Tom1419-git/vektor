@@ -24,6 +24,7 @@ BACKUPS_URL = os.environ.get("VEKTOR_BACKUPS_URL", "http://127.0.0.1:8000/api/ba
 DNS_URL = os.environ.get("VEKTOR_DNS_URL", "http://127.0.0.1:8000/api/dns")
 MONITORING_URL = os.environ.get("VEKTOR_MONITORING_URL", "http://127.0.0.1:8000/api/monitoring")
 PING_URL = os.environ.get("VEKTOR_PING_URL", "http://127.0.0.1:8000/api/ping")
+RELOAD_URL = os.environ.get("VEKTOR_RELOAD_URL", "http://127.0.0.1:8000/api/reload-doc")
 FORGET_URL = os.environ.get("VEKTOR_FORGET_URL", "http://127.0.0.1:8000/api/forget")
 API_TOKEN = os.environ.get("VEKTOR_API_TOKEN", "")
 HEADERS = {"X-Vektor-Token": API_TOKEN}
@@ -54,6 +55,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/dns : sonde des résolveurs DNS\n"
             "/monitoring : état des checks de monitoring\n"
             "/ping : diagnostic du chemin LLM (bridge, modèle, inférence)\n"
+            "/reload-doc : réindexer la documentation (après modification)\n"
             "/help : cette aide\n"
             "/forget : effacer toute ma mémoire de conversation\n\n"
             "Exemples :\n"
@@ -181,6 +183,25 @@ async def monitoring_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_long(update.message, response.json()["report"])
 
 
+async def reload_doc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Réindexe knowledge-live sans redémarrage (après édition de la doc)."""
+    if not is_allowed(update) or not update.message:
+        return
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(RELOAD_URL, headers=HEADERS)
+    except httpx.HTTPError:
+        await update.message.reply_text("Réindexation impossible (API injoignable).")
+        return
+    if response.status_code == 200:
+        await update.message.reply_text(response.json()["report"])
+    else:
+        await update.message.reply_text(
+            "Réindexation échouée — l'index précédent reste actif (aucune interruption)."
+        )
+
+
 async def forget(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_allowed(update) or not update.message:
         return
@@ -253,6 +274,7 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("dns", dns_cmd))
     application.add_handler(CommandHandler("monitoring", monitoring_cmd))
     application.add_handler(CommandHandler("ping", ping_cmd))
+    application.add_handler(CommandHandler("reload-doc", reload_doc))
     application.add_handler(CommandHandler("forget", forget))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.run_polling(allowed_updates=Update.ALL_TYPES)

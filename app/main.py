@@ -199,6 +199,26 @@ async def ping_endpoint(x_vektor_token: str | None = Header(default=None)):
     return {"report": await ping_report()}
 
 
+@app.post("/api/reload-doc")
+async def reload_doc_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """Ré-indexe knowledge/ (volume knowledge-live) sans redémarrer.
+
+    replace_knowledge fait TRUNCATE + réinsertion en une transaction :
+    un chat en cours pendant le reload ne voit jamais un index vide."""
+    require_token(x_vektor_token)
+    try:
+        count = await index_knowledge(memory)
+    except Exception:
+        logger.exception("reload-doc : réindexation échouée")
+        raise HTTPException(status_code=500, detail="Réindexation échouée — index précédent conservé")
+    return {
+        "report": (
+            f"🔄 Documentation réindexée : {count} extraits chargés depuis knowledge/.\n"
+            "Le prochain chat utilisera directement la nouvelle version — aucun redémarrage nécessaire."
+        )
+    }
+
+
 @app.get("/api/status")
 async def status(x_vektor_token: str | None = Header(default=None)):
     require_token(x_vektor_token)
