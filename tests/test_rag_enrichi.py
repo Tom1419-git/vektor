@@ -92,3 +92,29 @@ async def test_doc_vide_dit_ne_couvre_pas():
     memory = FakeMemory([])
     context = await retrieve_context(memory, "état de proxmox")
     assert "ne couvre pas" in context
+
+
+# ── Régression v1.3.1 : contrat memory <-> rag ────────────────────────────
+# search_knowledge (prod) renvoie des tuples (source, content, terms) comme
+# load_chunks — pas des dicts. Un mock qui ment sur ce contrat a déjà cassé
+# le chat LLM en prod (ValueError unpack). Ce test fige le contrat.
+
+async def test_contrat_search_knowledge_renvoie_des_tuples_3_elements():
+    chunks = _fake_chunks()
+    assert all(isinstance(c, tuple) and len(c) == 3 for c in chunks), (
+        "load_chunks doit renvoyer (source, content, terms)"
+    )
+    memory = FakeMemory(chunks)
+    # ne doit PAS lever ValueError : c'est la régression v1.3.0
+    context = await retrieve_context(memory, "jellyfin transcode")
+    assert "knowledge/a.md" in context
+
+
+async def test_retrieve_context_avec_chunks_memorie_reels():
+    """Forme EXACTE renvoyée par memory.search_knowledge en prod (asyncpg)."""
+    prod_shape = [
+        ("knowledge/homelab.md", "## Wireguard\nWireguard est le VPN du mesh.", ["wireguard", "vpn"]),
+        ("knowledge/homelab.md", "## DNS\nPi-hole filtre les pubs.", ["dns", "pihole"]),
+    ]
+    context = await retrieve_context(FakeMemory(prod_shape), "vpn wireguard config")
+    assert "Wireguard" in context
