@@ -60,6 +60,15 @@ flowchart LR
 | `/forget` | Réinitialise la mémoire de conversation |
 | `/start`, `/help` | Onboarding et liste des commandes |
 
+### Supervision élargie (lecture seule)
+Trois rapports supplémentaires, exposés en endpoints API et accessibles au LLM
+via le tool-calling natif :
+- **Backups** : derniers vzdump du stockage Proxmox (canal SSH forcé `vektor-status`),
+  âge de chaque archive, alerte au-delà de 24 h sans backup
+- **DNS** : sonde de résolution sur chaque résolveur configuré (UDP wire pour le
+  LAN, DoH wire/JSON pour le reste) — RCODE et adresses obtenues, sans modification
+- **Monitoring** : synthèse Healthchecks.io (checks up/down/late), token lecture seule
+
 ### Actions d'écriture (sécurisées)
 Un flux strict en deux temps, impossible à contourner :
 1. **Détection** : la demande correspond à une action de la whitelist (expressions régulières)

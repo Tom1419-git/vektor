@@ -92,6 +92,9 @@ pour éviter le démarrage à froid.
   `/model` (fiche technique réelle : modèle, matériel, latence moyenne),
   `/seeds` (top torrents en seed + espace staging récupérable), `/forget`,
   `/start`, `/help` + chat libre
+- **Supervision élargie (lecture seule)** : rapports backups (vzdump Proxmox),
+  DNS (sonde multi-résolveurs UDP/DoH) et monitoring (Healthchecks.io),
+  disponibles en endpoints API et pour le LLM via le tool-calling
 - **Actions d'écriture à double confirmation** (proposition → `OUI` explicite,
   TTL 2 min) : redémarrage Jellyfin, redémarrage Tdarr, redémarrage d'un LXC,
   redémarrage d'un conteneur Docker, rescan de bibliothèque Sonarr/Radarr,
@@ -168,10 +171,10 @@ La V2 ouvre le projet vers un vrai assistant, sans changer l'architecture.
 | # | Chantier | Objectif | Statut |
 |---|---|---|---|
 | 1 | **Activation du canal Alexa** | Débloquer la skill sur l'Echo physique (resynchro compte, marketplace FR) : le serveur et la vérification Amazon sont déjà prêts et validés dans le simulateur | 🚧 bloqué côté appareil — détail dans [DEPLOIEMENT-V1.md](DEPLOIEMENT-V1.md) |
-| 2 | **Tool-calling natif** | Passer au tool-calling LangChain (`bind_tools`) : le LLM choisit lui-même quand interroger l'infra, au lieu du routeur par mots-clés — avec garde-fous : whitelist inchangée, double confirmation conservée | 📋 planifié |
+| 2 | **Tool-calling natif** | Passer au tool-calling LangChain (`bind_tools`) : le LLM choisit lui-même quand interroger l'infra, au lieu du routeur par mots-clés — avec garde-fous : whitelist inchangée, double confirmation conservée | ✅ livré |
 | 3 | **Assistant vocal local (wake-word RPi)** | openWakeWord + Whisper (STT) + Piper (TTS) sur Raspberry Pi : un canal vocal indépendant d'Amazon, branché sur la même API | 📋 planifié |
-| 4 | **RAG enrichi** | Plusieurs sources de documentation, re-ranking des extraits, détection « la doc ne répond pas » pour limiter l'hallucination | 📋 planifié |
-| 5 | **Périmètre outils élargi** | Backups, DNS et monitoring en lecture seule via API avec credentials dédiés aux permissions minimales — jamais d'outil shell générique | 📋 planifié |
+| 4 | **RAG enrichi** | Plusieurs sources de documentation, re-ranking des extraits, détection « la doc ne répond pas » pour limiter l'hallucination | ✅ livré (sections titre+corps, re-ranking IDF, détection hors sujet) |
+| 5 | **Périmètre outils élargi** | Backups, DNS et monitoring en lecture seule via API avec credentials dédiés aux permissions minimales — jamais d'outil shell générique | ✅ livré (`/api/backups`, `/api/dns`, `/api/monitoring`) |
 
 La règle transversale reste la même pour toute la V2 : le LLM peut demander,
 jamais exécuter seul — toute action d'écriture passe toujours par la whitelist
