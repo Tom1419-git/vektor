@@ -36,12 +36,13 @@ async def test_backups_vide_dit_clairement_quaucun_fichier(monkeypatch):
     assert "Aucun fichier de backup" in report
 
 
-# ── DNS (DoH) ─────────────────────────────────────────────────────────────
+# ── DNS (multi-transport : UDP wire, DoH wire, DoH JSON) ─────────────────
 
 class FakeDoHResponse:
-    def __init__(self, status_code=200, payload=None):
+    def __init__(self, status_code=200, payload=None, content=b""):
         self.status_code = status_code
         self._payload = payload or {}
+        self.content = content
 
     def json(self):
         return self._payload
@@ -58,25 +59,84 @@ class FakeDoHClient:
         return False
 
     async def get(self, url, **kwargs):
+        params = kwargs.get("params") or {}
+        if params:  # forme DoH JSON : l'URL réelle porte la query string
+            from urllib.parse import urlencode
+
+            url = url + "?" + urlencode(params)
         return self._responses[url]
 
 
-async def test_dns_sonde_les_resolveurs(monkeypatch):
-    responses = {
-        "http://a.test/dns-query": FakeDoHResponse(payload={"Status": 0, "Answer": [{"type": 1, "data": "93.184.216.34"}]}),
-        "http://b.test/dns-query": FakeDoHResponse(status_code=503),
-    }
-    monkeypatch.setattr(watch, "DNS_RESOLVERS", {"a": "http://a.test/dns-query", "b": "http://b.test/dns-query"})
-    monkeypatch.setattr(watch.httpx, "AsyncClient", lambda **k: FakeDoHClient(responses))
+def _fake_udp_reply(packet, rcode=0, ip="93.184.216.34"):
+    """Réponse DNS wire minimale : question recopiée + 1 A."""
+    offset = 12  # l'entête fait 12 octets ; scanner le QNAME à partir de là
+    while packet[offset] != 0:
+        offset += packet[offset] + 1
+    qend = offset + 5  # octet nul + QTYPE + QCLASS
+    question = packet[12:qend]
+    answer = b"\xc0\x0c" + bytes([0, 1, 0, 1, 0, 0, 0, 60, 0, 4]) + bytes(
+        int(p) for p in ip.split(".")
+    )
+    return (
+        packet[:2]  # echo de l'ID de transaction
+        + bytes([0x81, 0x80 | rcode])
+        + b"\x00\x01\x00\x01\x00\x00\x00\x00"
+        + question
+        + answer
+    )
+
+
+async def test_dns_sonde_udp_wire_et_json(monkeypatch):
+    sent = {}
+
+    def fake_udp(host, port, packet, timeout=4.0):
+        sent["target"] = f"{host}:{port}"
+        return _fake_udp_reply(packet)
+
+    monkeypatch.setattr(watch, "DNS_RESOLVERS", {
+        "pihole": "udp://192.0.2.53:53",
+        "cloud": "http://c.test/dns-query",
+    })
+    monkeypatch.setattr(watch, "_udp_wire_query", fake_udp)
+    monkeypatch.setattr(watch.httpx, "AsyncClient", lambda **k: FakeDoHClient({
+        "http://c.test/dns-query?name=example.com&type=A": FakeDoHResponse(
+            payload={"Status": 0, "Answer": [{"type": 1, "data": "93.184.216.34"}]}
+        ),
+    }))
     report = await watch.dns_report()
-    assert "🟢 a" in report and "93.184.216.34" in report
-    assert "🔴 b" in report and "503" in report
+    assert sent["target"] == "192.0.2.53:53"
+    assert "🟢 pihole" in report and "93.184.216.34" in report
+    assert "🟢 cloud" in report
+
+
+async def test_dns_doh_wire_parse_le_rcode(monkeypatch):
+    good = _fake_udp_reply(watch._encode_wire_query("example.com"))
+    monkeypatch.setattr(watch, "DNS_RESOLVERS", {
+        "ok": "https://doh.test/dns-query?{dns}",
+        "ko": "https://doh.test/dns-query?{dns}",
+    })
+    monkeypatch.setattr(watch.httpx, "AsyncClient", lambda **k: FakeDoHClient({
+        "https://doh.test/dns-query?" + watch._encode_doh_query("example.com"): good and FakeDoHResponse(content=good),
+    }))
+    # le second résolveur partage la même URL : on le fait échouer via un socket KO
+    async def boom(*a, **k):
+        raise OSError("down")
+    monkeypatch.setattr(watch, "DNS_RESOLVERS", {"ko": "udp://192.0.2.1:53"})
+    report = await watch.dns_report()
+    assert "injoignable" in report
 
 
 async def test_dns_aucun_resolveur_configure(monkeypatch):
     monkeypatch.setattr(watch, "DNS_RESOLVERS", {})
     report = await watch.dns_report()
     assert "aucun résolveur" in report
+
+
+def test_parse_wire_extrait_rcode_et_ips():
+    packet = watch._encode_wire_query("example.com")
+    rcode, ips = watch._parse_wire_response(_fake_udp_reply(packet, ip="192.0.2.7"))
+    assert rcode == 0
+    assert ips == ["192.0.2.7"]
 
 
 # ── Monitoring (Healthchecks.io) ──────────────────────────────────────────

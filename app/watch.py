@@ -7,8 +7,10 @@ Trois périmètres ajoutés, tous par API dédiée, aucun shell générique :
    VMID-scoped et renvoie une liste vide pour un token PVEAuditor — le
    canal forcé est le seul chemin fiable, et il reste fermé (script
    sans argument libre côté hôte).
-2. DNS : résolution de sonde via les résolveurs configurés, en DoH
-   (DNS-over-HTTPS) — pas de port 53 sortant, pas de binaire dig.
+2. DNS : résolution de sonde sur chaque résolveur configuré, dans le
+   protocole qu'il parle réellement (défini par l'URL) :
+   `udp://hôte:port` = DNS wire UDP (Pi-hole :53, unbound :5335),
+   `https://…{dns}` = DoH wire RFC 8484, autre https = DoH JSON.
 3. Monitoring : état des checks Healthchecks.io si un token lecture est
    configuré (VEKTOR_HC_READ_TOKEN + VEKTOR_HC_API_URL).
 
@@ -16,7 +18,11 @@ Chaque outil dégrade proprement : non configuré -> message clair, API en
 erreur -> message d'état, jamais d'exception remontée au canal.
 """
 
+import asyncio
+import ipaddress
 import os
+import socket
+import struct
 import time
 
 import httpx
@@ -30,9 +36,11 @@ DNS_PROBES = os.environ.get(
     "VEKTOR_DNS_PROBES", "example.com"
 ).split(",")
 
-# Résolveurs à sonder (format `nom=url DoH`). DoH uniquement : JSON
-# structuré (Status: 0 = NOERROR), pas de dépendance à dig/nslookup.
-# Les résolveurs réels sont fournis via VEKTOR_DNS_RESOLVERS.
+# Résolveurs à sonder, fournis via VEKTOR_DNS_RESOLVERS au format
+# `nom=url`. Le schéma de l'URL choisit le transport :
+#   udp://192.168.1.62:53          -> DNS wire UDP (résolveurs du LAN)
+#   https://…/dns-query?{dns}      -> DoH wire RFC 8484 (template {dns})
+#   https://…/dns-query            -> DoH JSON (Pi-hole v6 exposé, Cloudflare)
 DNS_RESOLVERS: dict[str, str] = {}
 for item in os.environ.get("VEKTOR_DNS_RESOLVERS", "").split(","):
     if "=" in item:
@@ -72,30 +80,74 @@ async def backups_report() -> str:
     return "\n".join(lines)
 
 
-# ── DNS (sonde DoH) ───────────────────────────────────────────────────────
+# ── DNS (sonde multi-transport) ──────────────────────────────────────────
+
+def _encode_wire_query(name: str, qtype: int = 1) -> bytes:
+    """Construit une requête DNS wire minimale (RFC 1035, RD=1).
+
+    Entête complète de 12 octets : ID, flags, QDCOUNT/ANCOUNT/NSCOUNT/ARCOUNT."""
+    qname = b"".join(bytes([len(label)]) + label.encode() for label in name.split("."))
+    header = struct.pack("!HHHHHH", 0x1234, 0x0100, 1, 0, 0, 0)
+    return header + qname + b"\x00" + struct.pack("!HH", qtype, 1)
+
+
+def _parse_wire_response(message: bytes) -> tuple[int, list[str]]:
+    """Extrait le RCODE et les adresses A/AAAA d'une réponse DNS wire."""
+    if len(message) < 12:
+        return 15, []  # RCODE 15 = réponse illisible
+    rcode = message[3] & 0x0F
+    qdcount = (message[4] << 8) | message[5]
+    ancount = (message[6] << 8) | message[7]
+    offset = 12
+    for _ in range(qdcount):  # sauter la section Question
+        while offset < len(message) and message[offset] != 0:
+            offset += message[offset] + 1
+        offset += 5  # octet nul + QTYPE + QCLASS
+    ips: list[str] = []
+    for _ in range(ancount):
+        if offset >= len(message):
+            break
+        if message[offset] & 0xC0:  # nom compressé (pointeur 2 octets)
+            offset += 2
+        else:
+            while offset < len(message) and message[offset] != 0:
+                offset += message[offset] + 1
+            offset += 1
+        rtype, _rclass, _ttl, rdlength = struct.unpack(
+            "!HHIH", message[offset:offset + 10]
+        )
+        offset += 10
+        rdata = message[offset:offset + rdlength]
+        offset += rdlength
+        if rtype == 1 and rdlength == 4:
+            ips.append(str(ipaddress.IPv4Address(rdata)))
+        elif rtype == 28 and rdlength == 16:
+            ips.append(str(ipaddress.IPv6Address(rdata)))
+    return rcode, ips
+
+
+def _udp_wire_query(host: str, port: int, packet: bytes, timeout: float = 4.0) -> bytes:
+    """Envoie une requête DNS wire en UDP et retourne la réponse brute."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(timeout)
+        sock.sendto(packet, (host, port))
+        data, _ = sock.recvfrom(4096)
+    return data
+
 
 def _encode_doh_query(name: str, qtype: str = "A") -> str:
-    """Encode une requête RFC8484 minimale (QNAME + QTYPE) en base64url.
-
-    Utilisé pour les résolveurs en mode wire (template avec {dns}) : le
-    format JSON est utilisé sinon quand le résolveur le supporte."""
+    """Encode une requête RFC 8484 minimale (QNAME + QTYPE) en base64url."""
     import base64
-    import struct
 
-    qname = b"".join(bytes([len(label)]) + label.encode() for label in name.split("."))
-    packet = struct.pack("!HHHHH", 0x1234, 0x0100, 1, 0, 0) + qname + b"\x00"
-    packet += struct.pack("!HH", {"A": 1, "AAAA": 28, "TXT": 16}[qtype], 1)
-    return base64.urlsafe_b64encode(packet).decode().rstrip("=")
+    return base64.urlsafe_b64encode(_encode_wire_query(name)).decode().rstrip("=")
 
 
 async def dns_report() -> str:
     """Résout une sonde sur chaque résolveur configuré et compare.
 
-    Deux modes par résolveur, choisi par l'URL :
-    - template contenant {dns} : wire RFC8484 (paquet binaire en base64url)
-    - sinon : JSON (?name=&type=, accept dns-json — Pi-hole v6, Cloudflare…)
-
-    Aucun contact sur le port UDP 53 : uniquement HTTPS (443)."""
+    Le transport suit le schéma de l'URL (voir DNS_RESOLVERS) : UDP wire
+    pour les résolveurs du LAN, DoH wire ou JSON pour les publics. Chaque
+    ligne montre le RCODE et les premières adresses obtenues."""
     if not DNS_RESOLVERS:
         return "DNS : aucun résolveur configuré (VEKTOR_DNS_RESOLVERS)."
     probe = DNS_PROBES[0].strip() or "example.com"
@@ -104,7 +156,13 @@ async def dns_report() -> str:
     async with httpx.AsyncClient(timeout=6, verify=False) as client:
         for name, url in sorted(DNS_RESOLVERS.items()):
             try:
-                if "{dns}" in url:  # mode wire (RFC8484)
+                if url.startswith("udp://"):  # DNS wire UDP (LAN)
+                    host, port = url[6:].rsplit(":", 1)
+                    message = await asyncio.to_thread(
+                        _udp_wire_query, host, int(port), _encode_wire_query(probe)
+                    )
+                    rcode, ips = _parse_wire_response(message)
+                elif "{dns}" in url:  # DoH wire (RFC 8484)
                     response = await client.get(
                         url.replace("{dns}", _encode_doh_query(probe)),
                         headers={"accept": "application/dns-message"},
@@ -112,12 +170,8 @@ async def dns_report() -> str:
                     if response.status_code != 200:
                         lines.append(f"🔴 {name} : HTTP {response.status_code}")
                         continue
-                    message = response.content
-                    rcode = message[3] & 0x0F if len(message) > 3 else 15
-                    answers = (message[6] << 8) | message[7] if len(message) >= 8 else 0
-                    detail = f"NOERROR, {answers} réponse(s)" if rcode == 0 else f"RCODE {rcode}"
-                    icon = "🟢" if rcode == 0 else "🟡"
-                else:  # mode JSON
+                    rcode, ips = _parse_wire_response(response.content)
+                else:  # DoH JSON
                     response = await client.get(
                         url,
                         params={"name": probe, "type": "A"},
@@ -126,15 +180,19 @@ async def dns_report() -> str:
                     if response.status_code != 200:
                         lines.append(f"🔴 {name} : HTTP {response.status_code}")
                         continue
-                    status = response.json().get("Status")
+                    rcode = response.json().get("Status", 15)
                     answers = response.json().get("Answer") or []
-                    ips = [a.get("data") for a in answers if a.get("type") == 1]
-                    detail = ", ".join(ips[:2]) if ips else "NOERROR, 0 A"
-                    icon = "🟢" if status == 0 else "🟡"
+                    ips = [a.get("data", "") for a in answers if a.get("type") in (1, 28)]
+                detail = (
+                    ", ".join(ips[:2])
+                    if ips
+                    else ("NOERROR, 0 adresse" if rcode == 0 else f"RCODE {rcode}")
+                )
+                icon = "🟢" if rcode == 0 else "🟡"
                 lines.append(f"{icon} {name} : {detail}")
-            except (httpx.HTTPError, ValueError) as exc:
+            except (httpx.HTTPError, ValueError, OSError) as exc:
                 lines.append(f"🔴 {name} : injoignable ({exc.__class__.__name__})")
-    lines.append("\n_Sonde DoH lecture seule — aucune modification DNS._")
+    lines.append("\n_Sonde lecture seule — aucune modification DNS._")
     return "\n".join(lines)
 
 
