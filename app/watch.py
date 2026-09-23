@@ -2,8 +2,11 @@
 
 Trois périmètres ajoutés, tous par API dédiée, aucun shell générique :
 
-1. Backups : liste des sauvegardes vzdump via l'API Proxmox (le token
-   PVEAuditor existant a le droit de lecture storage/content).
+1. Backups : via le canal SSH à commande forcée (`vektor-status backups`
+   sur le PVE). Note : l'API Proxmox filtre les vzdump par permission
+   VMID-scoped et renvoie une liste vide pour un token PVEAuditor — le
+   canal forcé est le seul chemin fiable, et il reste fermé (script
+   sans argument libre côté hôte).
 2. DNS : résolution de sonde via les résolveurs configurés, en DoH
    (DNS-over-HTTPS) — pas de port 53 sortant, pas de binaire dig.
 3. Monitoring : état des checks Healthchecks.io si un token lecture est
@@ -18,7 +21,7 @@ import time
 
 import httpx
 
-from .tools import _pve_get, _pve_node
+from .tools import _pve_get, _pve_node, _status_channel
 
 HC_API_URL = os.environ.get("VEKTOR_HC_API_URL", "")
 HC_READ_TOKEN = os.environ.get("VEKTOR_HC_READ_TOKEN", "")
@@ -29,83 +32,105 @@ DNS_PROBES = os.environ.get(
 
 # Résolveurs à sonder (format `nom=url DoH`). DoH uniquement : JSON
 # structuré (Status: 0 = NOERROR), pas de dépendance à dig/nslookup.
+# Les résolveurs réels sont fournis via VEKTOR_DNS_RESOLVERS.
 DNS_RESOLVERS: dict[str, str] = {}
-for item in os.environ.get(
-    "VEKTOR_DNS_RESOLVERS",
-    "local=http://dns.local/dns-query",
-).split(","):
+for item in os.environ.get("VEKTOR_DNS_RESOLVERS", "").split(","):
     if "=" in item:
         name, url = item.split("=", 1)
         DNS_RESOLVERS[name.strip()] = url.strip()
 
 
-# ── Backups (API Proxmox, lecture) ────────────────────────────────────────
+# ── Backups (canal SSH forcé, lecture) ─────────────────────────────────
 
 async def backups_report() -> str:
-    """Dernières sauvegardes vzdump vues par l'API Proxmox."""
-    node = await _pve_node()
-    if not node:
-        return "Backups : API Proxmox injoignable ou non configurée."
+    """Dernières sauvegardes vzdump, via le canal SSH à commande forcée.
 
-    storages = await _pve_get(f"/nodes/{node}/storage")
-    if not storages:
-        return "Backups : liste des stockages indisponible."
+    L'API Proxmox filtre les vzdump par permission VMID-scoped : un token
+    PVEAuditor reçoit une liste vide même avec Datastore.Audit. Le canal
+    forcé (`vektor-status backups`, script fermé sur l'hôte) est le seul
+    chemin fiable — et il n'autorise aucune commande libre."""
+    raw = await _status_channel("vektor-status backups")
+    if raw.startswith("Canal") or raw.startswith("Sortie"):
+        return f"Backups : {raw[0].lower()}{raw[1:]}"
 
     lines: list[str] = ["💾 **Derniers backups (vzdump)**"]
-    found = False
-    for storage in sorted(storages, key=lambda item: item.get("storage", "")):
-        content = storage.get("content") or ""
-        if "backup" not in content:
+    count = 0
+    for line in raw.splitlines():
+        parts = line.strip().split("|")
+        if len(parts) != 4:
             continue
-        name = storage.get("storage")
-        snapshots = await _pve_get(
-            f"/nodes/{node}/storage/{name}/content?volid=1"
-        )
-        if snapshots is None:
-            continue
-        backups = [
-            item for item in snapshots
-            if str(item.get("volid", "")).endswith((".tar.zst", ".tar.gz", ".tar", ".vma.zst"))
-        ]
-        backups.sort(key=lambda item: item.get("ctime") or 0, reverse=True)
-        for item in backups[:3]:
-            found = True
-            volid = item.get("volid", "?")
-            age_days = (time.time() - (item.get("ctime") or 0)) / 86400
-            size_gib = (item.get("size") or 0) / 2**30
-            flag = "🔴" if age_days > 2 else "🟢"
-            lines.append(f"{flag} {volid} — {size_gib:.1f}G, il y a {age_days:.1f} j")
-    if not found:
-        lines.append("Aucun fichier de backup visible sur les stockages.")
-    lines.append("\n_Lecture seule via API Proxmox (token PVEAuditor)._")
+        icon_raw, name, size, age = parts
+        if icon_raw == "NONE":
+            lines.append("Aucun fichier de backup visible sur les stockages.")
+            break
+        count += 1
+        icon = "🟢" if icon_raw == "OK" else "🔴"
+        lines.append(f"{icon} `{name}` — {size}, il y a {age}")
+    if count:
+        lines.append(f"\n{count} fichiers vus — 🔴 = plus de 2 jours.")
+    lines.append("\n_Lecture seule via canal SSH forcé (script fermé)._")
     return "\n".join(lines)
 
 
 # ── DNS (sonde DoH) ───────────────────────────────────────────────────────
 
+def _encode_doh_query(name: str, qtype: str = "A") -> str:
+    """Encode une requête RFC8484 minimale (QNAME + QTYPE) en base64url.
+
+    Utilisé pour les résolveurs en mode wire (template avec {dns}) : le
+    format JSON est utilisé sinon quand le résolveur le supporte."""
+    import base64
+    import struct
+
+    qname = b"".join(bytes([len(label)]) + label.encode() for label in name.split("."))
+    packet = struct.pack("!HHHHH", 0x1234, 0x0100, 1, 0, 0) + qname + b"\x00"
+    packet += struct.pack("!HH", {"A": 1, "AAAA": 28, "TXT": 16}[qtype], 1)
+    return base64.urlsafe_b64encode(packet).decode().rstrip("=")
+
+
 async def dns_report() -> str:
-    """Résout une sonde sur chaque résolveur DoH configuré et compare."""
+    """Résout une sonde sur chaque résolveur configuré et compare.
+
+    Deux modes par résolveur, choisi par l'URL :
+    - template contenant {dns} : wire RFC8484 (paquet binaire en base64url)
+    - sinon : JSON (?name=&type=, accept dns-json — Pi-hole v6, Cloudflare…)
+
+    Aucun contact sur le port UDP 53 : uniquement HTTPS (443)."""
     if not DNS_RESOLVERS:
         return "DNS : aucun résolveur configuré (VEKTOR_DNS_RESOLVERS)."
     probe = DNS_PROBES[0].strip() or "example.com"
 
     lines: list[str] = [f"🌐 **DNS** — sonde `{probe}`"]
-    async with httpx.AsyncClient(timeout=6) as client:
+    async with httpx.AsyncClient(timeout=6, verify=False) as client:
         for name, url in sorted(DNS_RESOLVERS.items()):
             try:
-                response = await client.get(
-                    url,
-                    params={"name": probe, "type": "A"},
-                    headers={"accept": "application/dns-json"},
-                )
-                if response.status_code != 200:
-                    lines.append(f"🔴 {name} : HTTP {response.status_code}")
-                    continue
-                status = response.json().get("Status")
-                answers = response.json().get("Answer") or []
-                ips = [a.get("data") for a in answers if a.get("type") == 1]
-                detail = ", ".join(ips[:2]) if ips else f"NOERROR, 0 A"
-                icon = "🟢" if status == 0 else "🟡"
+                if "{dns}" in url:  # mode wire (RFC8484)
+                    response = await client.get(
+                        url.replace("{dns}", _encode_doh_query(probe)),
+                        headers={"accept": "application/dns-message"},
+                    )
+                    if response.status_code != 200:
+                        lines.append(f"🔴 {name} : HTTP {response.status_code}")
+                        continue
+                    message = response.content
+                    rcode = message[3] & 0x0F if len(message) > 3 else 15
+                    answers = (message[6] << 8) | message[7] if len(message) >= 8 else 0
+                    detail = f"NOERROR, {answers} réponse(s)" if rcode == 0 else f"RCODE {rcode}"
+                    icon = "🟢" if rcode == 0 else "🟡"
+                else:  # mode JSON
+                    response = await client.get(
+                        url,
+                        params={"name": probe, "type": "A"},
+                        headers={"accept": "application/dns-json"},
+                    )
+                    if response.status_code != 200:
+                        lines.append(f"🔴 {name} : HTTP {response.status_code}")
+                        continue
+                    status = response.json().get("Status")
+                    answers = response.json().get("Answer") or []
+                    ips = [a.get("data") for a in answers if a.get("type") == 1]
+                    detail = ", ".join(ips[:2]) if ips else "NOERROR, 0 A"
+                    icon = "🟢" if status == 0 else "🟡"
                 lines.append(f"{icon} {name} : {detail}")
             except (httpx.HTTPError, ValueError) as exc:
                 lines.append(f"🔴 {name} : injoignable ({exc.__class__.__name__})")

@@ -3,50 +3,35 @@
 from app import watch
 
 
-# ── Backups ───────────────────────────────────────────────────────────────
+# ── Backups (canal SSH forcé) ─────────────────────────────────────────────
 
-async def test_backups_api_injoignable_message_clair(monkeypatch):
-    async def fail_node():
-        return None
+async def test_backups_canal_indisponible_message_clair(monkeypatch):
+    async def fake_channel(cmd):
+        return "Canal SSH lecture seule indisponible pour le moment."
 
-    monkeypatch.setattr(watch, "_pve_node", fail_node)
+    monkeypatch.setattr(watch, "_status_channel", fake_channel)
     report = await watch.backups_report()
-    assert "injoignable ou non configurée" in report
+    assert "indisponible" in report
 
 
-async def test_backups_liste_et_age(monkeypatch):
-    async def fake_node():
-        return "pve"
+async def test_backups_parse_la_sortie_du_canal_force(monkeypatch):
+    async def fake_channel(cmd):
+        assert cmd == "vektor-status backups"
+        return "OK|vzdump-lxc-101-2026_09_23.tar.zst|1G|15 h\nOLD|vzdump-lxc-102-2026_09_20.tar.zst|18G|3 j"
 
-    async def fake_get(path):
-        if path.endswith("/storage"):
-            return [{"storage": "backup-dumps", "content": "backup"}]
-        if "content?volid=1" in path:
-            return [
-                {"volid": "backup-dumps:backup/vzdump-lxc-103.tar.zst", "ctime": watch.time.time() - 3600, "size": 2**30},
-                {"volid": "backup-dumps:backup/vzdump-lxc-104.tar.zst", "ctime": watch.time.time() - 10 * 86400, "size": 3**30},
-            ]
-        return None
-
-    monkeypatch.setattr(watch, "_pve_node", fake_node)
-    monkeypatch.setattr(watch, "_pve_get", fake_get)
+    monkeypatch.setattr(watch, "_status_channel", fake_channel)
     report = await watch.backups_report()
-    assert "vzdump-lxc-103" in report
-    assert "vzdump-lxc-104" in report
-    assert "🔴" in report and "🟢" in report  # vieux backup signalé
+    assert "vzdump-lxc-101" in report
+    assert "vzdump-lxc-102" in report
+    assert "🟢" in report and "🔴" in report  # vieux backup signalé
+    assert "2 fichiers vus" in report
 
 
-async def test_backups_ignorer_les_stockages_sans_content_backup(monkeypatch):
-    async def fake_node():
-        return "pve"
+async def test_backups_vide_dit_clairement_quaucun_fichier(monkeypatch):
+    async def fake_channel(cmd):
+        return "NONE|aucun vzdump trouve|0G|?"
 
-    async def fake_get(path):
-        if path.endswith("/storage"):
-            return [{"storage": "local", "content": "iso,vztmpl"}]
-        return None
-
-    monkeypatch.setattr(watch, "_pve_node", fake_node)
-    monkeypatch.setattr(watch, "_pve_get", fake_get)
+    monkeypatch.setattr(watch, "_status_channel", fake_channel)
     report = await watch.backups_report()
     assert "Aucun fichier de backup" in report
 
