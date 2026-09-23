@@ -23,6 +23,7 @@ SEEDS_URL = os.environ.get("VEKTOR_SEEDS_URL", "http://127.0.0.1:8000/api/seeds"
 BACKUPS_URL = os.environ.get("VEKTOR_BACKUPS_URL", "http://127.0.0.1:8000/api/backups")
 DNS_URL = os.environ.get("VEKTOR_DNS_URL", "http://127.0.0.1:8000/api/dns")
 MONITORING_URL = os.environ.get("VEKTOR_MONITORING_URL", "http://127.0.0.1:8000/api/monitoring")
+PING_URL = os.environ.get("VEKTOR_PING_URL", "http://127.0.0.1:8000/api/ping")
 FORGET_URL = os.environ.get("VEKTOR_FORGET_URL", "http://127.0.0.1:8000/api/forget")
 API_TOKEN = os.environ.get("VEKTOR_API_TOKEN", "")
 HEADERS = {"X-Vektor-Token": API_TOKEN}
@@ -52,6 +53,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/backups : derniers backups vzdump (âge, taille)\n"
             "/dns : sonde des résolveurs DNS\n"
             "/monitoring : état des checks de monitoring\n"
+            "/ping : diagnostic du chemin LLM (bridge, modèle, inférence)\n"
             "/help : cette aide\n"
             "/forget : effacer toute ma mémoire de conversation\n\n"
             "Exemples :\n"
@@ -126,6 +128,23 @@ async def backups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if response.status_code != 200:
         await update.message.reply_text("Le rapport backups est indisponible (API).")
+        return
+    await send_long(update.message, response.json()["report"])
+
+
+async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Diagnostic du chemin LLM : bridge, modèle, RAM, inférence réelle."""
+    if not is_allowed(update) or not update.message:
+        return
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            response = await client.get(PING_URL, headers=HEADERS)
+    except httpx.HTTPError:
+        await update.message.reply_text("Diagnostic impossible (API injoignable — c'est déjà un indice !)")
+        return
+    if response.status_code != 200:
+        await update.message.reply_text("Diagnostic indisponible (API).")
         return
     await send_long(update.message, response.json()["report"])
 
@@ -233,6 +252,7 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("backups", backups_cmd))
     application.add_handler(CommandHandler("dns", dns_cmd))
     application.add_handler(CommandHandler("monitoring", monitoring_cmd))
+    application.add_handler(CommandHandler("ping", ping_cmd))
     application.add_handler(CommandHandler("forget", forget))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.run_polling(allowed_updates=Update.ALL_TYPES)

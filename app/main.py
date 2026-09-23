@@ -11,6 +11,7 @@ from .memory import Memory
 from .rag import index_knowledge
 from .graph import run_agent
 from .tools import full_status_report, infra_live_report, model_card, seeds_report
+from .ping import ping_report
 from . import watch as watch_mod
 from . import alexa as alexa_mod
 
@@ -189,6 +190,13 @@ async def seeds_endpoint(x_vektor_token: str | None = Header(default=None)):
     """Rapport seeds : qBittorrent live + staging récupérable. Lecture seule."""
     require_token(x_vektor_token)
     return {"report": await seeds_report()}
+
+
+@app.get("/api/ping")
+async def ping_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """Diagnostic du chemin LLM complet, maillon par maillon. Lecture seule."""
+    require_token(x_vektor_token)
+    return {"report": await ping_report()}
 
 
 @app.get("/api/status")
