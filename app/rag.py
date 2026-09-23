@@ -76,7 +76,13 @@ def _chunks_from_text(text: str) -> list[str]:
 def load_chunks(root: str = "knowledge") -> list[tuple[str, str, list[str]]]:
     chunks: list[tuple[str, str, list[str]]] = []
     for path in Path(root).rglob("*.md"):
+        # Fichiers AppleDouble macOS (._doc.md) : métadonnées binaires qui
+        # contiennent des octets NUL — refusés par PostgreSQL. Jamais de la doc.
+        if path.name.startswith("._"):
+            continue
         text = path.read_text(encoding="utf-8", errors="replace")
+        # Ceinture et bretelles : NUL est UTF-8 valide mais interdit en base.
+        text = text.replace("\x00", "")
         for chunk in _chunks_from_text(text):
             chunks.append((str(path), chunk, _terms(chunk)))
     return chunks

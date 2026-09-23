@@ -1,6 +1,6 @@
 """Tests du RAG enrichi : chunking sections, re-ranking IDF, détection hors sujet."""
 
-from app.rag import _chunks_from_text, rank_chunks, retrieve_context
+from app.rag import _chunks_from_text, load_chunks, rank_chunks, retrieve_context
 
 
 # ── Chunking par sections ────────────────────────────────────────────────
@@ -23,6 +23,17 @@ def test_chunking_section_trop_longue_re_decoupee_par_paragraphe():
 def test_chunking_titre_sans_corps_restera_cherchable():
     chunks = _chunks_from_text("# Table des matières\n\n# Réseau\n\nDu contenu.\n")
     assert "Table des matières" in chunks
+
+
+def test_load_chunks_ignore_les_appledouble(tmp_path):
+    # ._doc.md = métadonnées macOS binaires, à ne jamais indexer
+    (tmp_path / "._doc.md").write_bytes(b"\x00\x05\x16\x07macOS binary")
+    (tmp_path / "doc.md").write_text("# Sujet\n\nContenu utile.\n", encoding="utf-8")
+    chunks = load_chunks(str(tmp_path))
+    sources = [source for source, _, _ in chunks]
+    assert all(not s.endswith("._doc.md") for s in sources)
+    assert any(s.endswith("doc.md") for s in sources)
+    assert all("\x00" not in content for _, content, _ in chunks)
 
 
 # ── Re-ranking ────────────────────────────────────────────────────────────
