@@ -5,15 +5,16 @@
 ![Ollama](https://img.shields.io/badge/LLM-Ollama-FFFFFF?logo=ollama&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-Assistant personnel auto-hébergé « Jarvis » : omnicanal **Telegram + Alexa**,
-mémoire conversationnelle PostgreSQL, RAG sur la documentation d'infrastructure
-et **outils live en lecture seule** (Proxmox, Docker, services).
-Cerveau : **Qwen 2.5 14B** via Ollama, entièrement auto-hébergé.
+Assistant personnel auto-hébergé « Jarvis » : **canal Telegram en production**, canal
+Alexa développé côté serveur mais pas encore activé sur l'appareil (voir
+[DEPLOIEMENT-V1.md](DEPLOIEMENT-V1.md)), mémoire conversationnelle PostgreSQL, RAG sur
+la documentation d'infrastructure et **outils live en lecture seule** (Proxmox, Docker,
+services). Cerveau : **Qwen 2.5 14B** via Ollama, entièrement auto-hébergé.
 
 ## 🎯 Vektor en bref
 
-Vektor est un assistant personnel auto-hébergé qui répond sur Telegram et à
-l'oral via Alexa. **Il est capable de** : fournir l'état réel d'une
+Vektor est un assistant personnel auto-hébergé qui répond sur Telegram (le canal
+vocal Alexa est construit mais pas encore opérationnel sur l'Echo). **Il est capable de** : fournir l'état réel d'une
 infrastructure en moins d'une seconde (CPU, RAM, stockage, conteneurs, services,
 torrents) sans jamais passer par le LLM pour les chiffres, répondre aux questions
 générales avec un LLM local enrichi d'une documentation indexée (RAG) et de la
@@ -35,7 +36,7 @@ et verrouillé, pas une IA omnipotente — un choix de sécurité assumé.
 flowchart LR
     subgraph Clients
         TG["📱 Telegram"]
-        AX["🔊 Alexa"]
+        AX["🔊 Alexa<br/>(non actif)"]
     end
 
     subgraph Serveur["🧠 Serveur Vektor (Docker)"]
@@ -85,7 +86,7 @@ pour éviter le démarrage à froid.
   Docker de tous les conteneurs, statut HTTP des services (Jellyfin, Sonarr,
   Radarr, Prowlarr, qBittorrent, Garmin Map)
 - **Vie quotidienne** : questions générales en français, mémoire de conversation
-  persistante partagée Telegram ↔ Alexa, `/forget` pour tout effacer
+  persistante (PostgreSQL), `/forget` pour tout effacer
 - **Commandes Telegram** : `/status` (rapport infra complet, sans LLM),
   `/model` (fiche technique réelle : modèle, matériel, latence moyenne),
   `/seeds` (top torrents en seed + espace staging récupérable), `/forget`,
@@ -101,7 +102,9 @@ pour éviter le démarrage à froid.
   vers les données live est déterministe (mots-clés), pas une décision du modèle
 - Whitelist d'actions fermée : "éteins le serveur" ou toute action hors liste
   est refusée — voulu
-- Pas de voix locale (wake-word, STT/TTS maison) : Alexa est le seul canal vocal
+- Pas de voix opérationnelle : le canal Alexa (skill + serveur) est développé et
+  validé dans le simulateur Amazon, mais l'Echo physique ne déclenche pas encore la
+  skill — Telegram reste le seul canal réellement utilisé
 - Français uniquement, mono-utilisateur assumé
 - Modèle 14B quantifié : raisonnement limité sur les sujets complexes, faits
   récents susceptibles d'hallucination
@@ -130,9 +133,10 @@ curl http://127.0.0.1:8092/health
 docker compose --profile telegram up -d telegram
 ```
 
-Pour le canal Alexa : endpoint HTTPS `https://<domaine>/api/alexa` derrière
-reverse proxy, vérification cryptographique Amazon complète (signature, horizon
-temporel, skill ID) — interaction model et démarche détaillés dans
+Le code du canal Alexa est inclus (endpoint `https://<domaine>/api/alexa`, vérification
+cryptographique Amazon complète : signature, horizon temporel, skill ID) et a été validé
+dans le simulateur Amazon ; l'intégration sur appareil physique reste à finaliser —
+interaction model, démarche et blocage rencontré détaillés dans
 [DEPLOIEMENT-V1.md](DEPLOIEMENT-V1.md).
 
 ## Sécurité
