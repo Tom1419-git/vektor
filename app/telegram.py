@@ -20,6 +20,9 @@ API_URL = os.environ.get("VEKTOR_API_URL", "http://127.0.0.1:8000/api/chat")
 STATUS_URL = os.environ.get("VEKTOR_STATUS_URL", "http://127.0.0.1:8000/api/status")
 MODEL_URL = os.environ.get("VEKTOR_MODEL_URL", "http://127.0.0.1:8000/api/model")
 SEEDS_URL = os.environ.get("VEKTOR_SEEDS_URL", "http://127.0.0.1:8000/api/seeds")
+BACKUPS_URL = os.environ.get("VEKTOR_BACKUPS_URL", "http://127.0.0.1:8000/api/backups")
+DNS_URL = os.environ.get("VEKTOR_DNS_URL", "http://127.0.0.1:8000/api/dns")
+MONITORING_URL = os.environ.get("VEKTOR_MONITORING_URL", "http://127.0.0.1:8000/api/monitoring")
 FORGET_URL = os.environ.get("VEKTOR_FORGET_URL", "http://127.0.0.1:8000/api/forget")
 API_TOKEN = os.environ.get("VEKTOR_API_TOKEN", "")
 HEADERS = {"X-Vektor-Token": API_TOKEN}
@@ -46,6 +49,9 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/status : rapport homelab complet en direct\n"
             "/model : ma fiche technique (modèle, hardware, latence)\n"
             "/seeds : top seeding qBittorrent + espace staging récupérable\n"
+            "/backups : derniers backups vzdump (âge, taille)\n"
+            "/dns : sonde des résolveurs DNS\n"
+            "/monitoring : état des checks de monitoring\n"
             "/help : cette aide\n"
             "/forget : effacer toute ma mémoire de conversation\n\n"
             "Exemples :\n"
@@ -107,6 +113,55 @@ async def seeds_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_long(update.message, response.json()["report"])
 
 
+async def backups_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Derniers backups vzdump — sans LLM, lecture seule via API Proxmox."""
+    if not is_allowed(update) or not update.message:
+        return
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get(BACKUPS_URL, headers=HEADERS)
+    except httpx.HTTPError:
+        await update.message.reply_text("Impossible de générer le rapport backups (API).")
+        return
+    if response.status_code != 200:
+        await update.message.reply_text("Le rapport backups est indisponible (API).")
+        return
+    await send_long(update.message, response.json()["report"])
+
+
+async def dns_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sonde DNS des résolveurs configurés — sans LLM."""
+    if not is_allowed(update) or not update.message:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(DNS_URL, headers=HEADERS)
+    except httpx.HTTPError:
+        await update.message.reply_text("Impossible de sonder les résolveurs (API).")
+        return
+    if response.status_code != 200:
+        await update.message.reply_text("Le rapport DNS est indisponible (API).")
+        return
+    await send_long(update.message, response.json()["report"])
+
+
+async def monitoring_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """État des checks Healthchecks.io — sans LLM, token lecture dédié."""
+    if not is_allowed(update) or not update.message:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(MONITORING_URL, headers=HEADERS)
+    except httpx.HTTPError:
+        await update.message.reply_text("Impossible de lire le monitoring (API).")
+        return
+    if response.status_code != 200:
+        await update.message.reply_text("Le rapport monitoring est indisponible (API).")
+        return
+    await send_long(update.message, response.json()["report"])
+
+
 async def forget(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_allowed(update) or not update.message:
         return
@@ -156,6 +211,9 @@ async def post_init(application: Application) -> None:
             BotCommand("status", "Rapport homelab complet en direct"),
             BotCommand("model", "Fiche technique de Vektor (modèle, hardware, latence)"),
             BotCommand("seeds", "Top seeding qBittorrent + espace staging récupérable"),
+            BotCommand("backups", "Derniers backups vzdump (âge, taille)"),
+            BotCommand("dns", "Sonde des résolveurs DNS"),
+            BotCommand("monitoring", "État des checks de monitoring"),
             BotCommand("forget", "Effacer la mémoire des conversations"),
         ]
     )
@@ -170,6 +228,9 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("status", status_cmd))
     application.add_handler(CommandHandler("model", model_cmd))
     application.add_handler(CommandHandler("seeds", seeds_cmd))
+    application.add_handler(CommandHandler("backups", backups_cmd))
+    application.add_handler(CommandHandler("dns", dns_cmd))
+    application.add_handler(CommandHandler("monitoring", monitoring_cmd))
     application.add_handler(CommandHandler("forget", forget))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.run_polling(allowed_updates=Update.ALL_TYPES)

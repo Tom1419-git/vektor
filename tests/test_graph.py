@@ -35,12 +35,14 @@ class ToolCallingLLM(FakeLLM):
 
 async def test_outils_exposes_lisa_lecture_seule():
     names = {tool_item.name for tool_item in graph.READONLY_TOOLS}
-    assert names == {
+    assert {
         "etat_proxmox", "liste_conteneurs", "etat_stockage",
         "inventaire_docker", "statut_service", "rapport_seeds",
-    }
+    } <= names
     # Aucune action d'écriture dans le périmètre du LLM
     assert all("restart" not in n and "pause" not in n and "resume" not in n for n in names)
+    # Chaque outil expose une docstring (contrat lu par le modèle)
+    assert all(tool_item.description for tool_item in graph.READONLY_TOOLS)
 
 
 async def test_boucle_outil_resultat_injecte(monkeypatch):

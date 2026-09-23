@@ -11,6 +11,7 @@ from .memory import Memory
 from .rag import index_knowledge
 from .graph import run_agent
 from .tools import full_status_report, infra_live_report, model_card, seeds_report
+from . import watch as watch_mod
 from . import alexa as alexa_mod
 
 memory = Memory()
@@ -195,6 +196,27 @@ async def status(x_vektor_token: str | None = Header(default=None)):
     require_token(x_vektor_token)
     report = await full_status_report()
     return {"report": report}
+
+
+@app.get("/api/backups")
+async def backups_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """Derniers backups vzdump vus par l'API Proxmox. Lecture seule."""
+    require_token(x_vektor_token)
+    return {"report": await watch_mod.backups_report()}
+
+
+@app.get("/api/dns")
+async def dns_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """Sonde DoH des résolveurs configurés. Lecture seule."""
+    require_token(x_vektor_token)
+    return {"report": await watch_mod.dns_report()}
+
+
+@app.get("/api/monitoring")
+async def monitoring_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """État des checks Healthchecks.io (token lecture dédié). Lecture seule."""
+    require_token(x_vektor_token)
+    return {"report": await watch_mod.monitoring_report()}
 
 
 @app.post("/api/forget")
