@@ -1,5 +1,6 @@
 # Vektor
 
+![Release](https://img.shields.io/github/v/release/Tom1419-git/vektor)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)
 ![Ollama](https://img.shields.io/badge/LLM-Ollama-FFFFFF?logo=ollama&logoColor=white)
