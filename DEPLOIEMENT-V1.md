@@ -4,7 +4,7 @@ Assistant personnel auto-hébergé « Jarvis » : omnicanal (Telegram + Alexa),
 conscient de l'infrastructure (RAG + outils live en lecture seule), cerveau
 LLM local (Ollama sur VPS).
 
-- **Bot Telegram** : [t.me/<ton-bot-telegram>](https://t.me/<ton-bot-telegram>)
+- **Bot Telegram** : `https://t.me/<nom-du-bot>`
 - **Endpoint Alexa** : `https://vektor.example.ch/api/alexa`
 - **Hébergement** : VPS (`/opt/vektor`), 4 conteneurs Docker
 - **Sécurité** : lecture seule, whitelist stricte, aucun port public inutile
@@ -87,7 +87,7 @@ du WAN et du LAN.
 ### Étape 5 — Telegram
 1. Constat : le token fourni au départ était celui du bot d'admin existant
    (`homelab_bot`) → conflit `getUpdates` (un token = un polling).
-2. Création d'un **bot dédié** via @BotFather : `<ton-bot-telegram>`.
+2. Création d'un **bot dédié** via @BotFather : `<nom-du-bot>`.
 3. Piège de saisie : token recopié depuis un screenshot avec un caractère
    ambigu (`V` lu `v`) → `401 Unauthorized`. Toujours coller le token en
    texte, jamais depuis une image.
