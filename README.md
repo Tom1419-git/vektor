@@ -159,11 +159,19 @@ interaction model, démarche et blocage rencontré détaillés dans
 - Le RAG fournit un contexte documentaire ; les états sont vérifiés en direct.
 - Les secrets et clés privées sont exclus de `knowledge/`.
 
-## Prochaines étapes (V2)
+## Roadmap V2
 
-- Tool-calling natif (LangChain `bind_tools`) pour que le LLM choisisse lui-même
-  quand interroger l'infra, au lieu du routeur par mots-clés
-- RAG enrichi : plusieurs sources, re-ranking, détection « la doc ne répond pas »
-- Écoute continue locale (wake-word openWakeWord + Whisper + Piper sur Raspberry Pi)
-- Backups, DNS et monitoring en lecture seule via API avec credentials dédiés
-  aux permissions minimales — jamais d'outil shell générique
+La V1 est volontairement conservatrice (routage par mots-clés, mono-canal actif).
+La V2 ouvre le projet vers un vrai assistant, sans changer l'architecture.
+
+| # | Chantier | Objectif | Statut |
+|---|---|---|---|
+| 1 | **Activation du canal Alexa** | Débloquer la skill sur l'Echo physique (resynchro compte, marketplace FR) : le serveur et la vérification Amazon sont déjà prêts et validés dans le simulateur | 🚧 bloqué côté appareil — détail dans [DEPLOIEMENT-V1.md](DEPLOIEMENT-V1.md) |
+| 2 | **Tool-calling natif** | Passer au tool-calling LangChain (`bind_tools`) : le LLM choisit lui-même quand interroger l'infra, au lieu du routeur par mots-clés — avec garde-fous : whitelist inchangée, double confirmation conservée | 📋 planifié |
+| 3 | **Assistant vocal local (wake-word RPi)** | openWakeWord + Whisper (STT) + Piper (TTS) sur Raspberry Pi : un canal vocal indépendant d'Amazon, branché sur la même API | 📋 planifié |
+| 4 | **RAG enrichi** | Plusieurs sources de documentation, re-ranking des extraits, détection « la doc ne répond pas » pour limiter l'hallucination | 📋 planifié |
+| 5 | **Périmètre outils élargi** | Backups, DNS et monitoring en lecture seule via API avec credentials dédiés aux permissions minimales — jamais d'outil shell générique | 📋 planifié |
+
+La règle transversale reste la même pour toute la V2 : le LLM peut demander,
+jamais exécuter seul — toute action d'écriture passe toujours par la whitelist
+et la double confirmation.
