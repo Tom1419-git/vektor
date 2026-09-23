@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Variables d'environnement de test
+        run: |
+          echo "DATABASE_URL=postgresql://test:test@localhost:5432/test" >> $GITHUB_ENV
+          echo "VEKTOR_API_TOKEN=test-token" >> $GITHUB_ENV
+          echo "VEKTOR_SERVICES=jellyfin=http://svc.test:8096" >> $GITHUB_ENV
+
+      - name: Lancer les tests
+        run: pytest -v
