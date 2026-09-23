@@ -1,5 +1,6 @@
 from typing import TypedDict
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import tool
 import time
 
 from langchain_ollama import ChatOllama
@@ -7,7 +8,8 @@ from langgraph.graph import StateGraph, END
 from .config import get_settings
 from .memory import Memory
 from .rag import retrieve_context
-from .tools import infra_live_report, record_llm_latency
+from . import tools as t
+from .tools import record_llm_latency
 from . import actions
 
 SYSTEM = """Tu es Vektor, l'assistant personnel de Thomas.
@@ -20,6 +22,9 @@ La documentation est un contexte, pas une preuve de l'état actuel.
 Les actions d'écriture suivent un flux strict : proposition puis confirmation OUI explicite,
 jamais d'exécution directe. Ne promets jamais d'exécuter une action toi-même.
 Ne révèle jamais de secret, token, mot de passe ou clé privée.
+Des outils de consultation en lecture seule sont disponibles : quand la question porte
+sur l'état présent de l'infrastructure, utilise-les et cite leurs résultats tels quels,
+sans les modifier ni les extrapoler. S'ils ne répondent pas à la question, dis-le.
 """
 
 
@@ -29,6 +34,75 @@ class State(TypedDict):
     context: str
     live_result: str
     response: str
+
+
+# ── Outils lecture seule exposés au LLM (tool-calling natif) ──────────────
+# Aucune action d'écriture ici : la whitelist + double confirmation OUI
+# reste un chemin déterministe en amont, hors de portée du modèle.
+
+@tool
+async def etat_proxmox() -> str:
+    """État du nœud Proxmox : CPU, charge, RAM, swap, uptime."""
+    return await t.pve_summary()
+
+
+@tool
+async def liste_conteneurs() -> str:
+    """Liste des conteneurs LXC Proxmox : état, RAM, uptime de chaque CT."""
+    return await t.pve_lxc_status()
+
+
+@tool
+async def etat_stockage() -> str:
+    """Remplissage des stockages Proxmox avec alerte au-delà de 90 %."""
+    return await t.pve_storage_status()
+
+
+@tool
+async def inventaire_docker() -> str:
+    """Inventaire des conteneurs Docker du homelab (état, image)."""
+    return await t.docker_inventory()
+
+
+@tool
+async def statut_service(service: str) -> str:
+    """Vérifie qu'un service surveillé répond (jellyfin, sonarr, radarr...)."""
+    return await t.check_service(service)
+
+
+@tool
+async def rapport_seeds() -> str:
+    """Seeding qBittorrent : top torrents, ratio, espace staging récupérable."""
+    return await t.seeds_report()
+
+
+READONLY_TOOLS = [etat_proxmox, liste_conteneurs, etat_stockage, inventaire_docker, statut_service, rapport_seeds]
+TOOLS_BY_NAME = {tool_item.name: tool_item for tool_item in READONLY_TOOLS}
+
+
+async def _invoke_with_tools(llm, messages: list) -> str:
+    """Inférence avec outils : si le modèle demande un outil (lecture seule),
+    l'exécute, injecte le résultat et régénère la réponse finale."""
+    llm_with_tools = llm.bind_tools(READONLY_TOOLS)
+    first = await llm_with_tools.ainvoke(messages)
+    tool_calls = getattr(first, "tool_calls", None)
+    if not tool_calls:
+        return first.content
+
+    messages.append(first)
+    for call in tool_calls:
+        selected = TOOLS_BY_NAME.get(call["name"])
+        if selected is None:
+            result = f"Outil inconnu ou non autorisé : {call['name']}"
+        else:
+            try:
+                result = str(await selected.ainvoke(call.get("args") or {}))
+            except Exception as exc:  # un outil en panne ne doit pas casser la réponse
+                result = f"Outil indisponible ({exc.__class__.__name__})."
+        messages.append(ToolMessage(content=result, tool_call_id=call["id"]))
+
+    final = await llm.ainvoke(messages)
+    return final.content
 
 
 async def run_agent(memory: Memory, text: str, history: list[dict[str, str]], user_key: str = "default") -> str:
@@ -56,24 +130,25 @@ async def run_agent(memory: Memory, text: str, history: list[dict[str, str]], us
             return already
         return actions.propose(detected[1], user_key)
 
-    context = await retrieve_context(memory, text)
-    live_result = await infra_live_report(text)
+    # 3. Routeur déterministe : donnée infra évidente -> réponse live sans LLM
+    live_result = await t.infra_live_report(text)
     if live_result:
         return live_result
+
+    # 4. LLM avec outils lecture seule : le modèle décide s'il doit consulter
+    context = await retrieve_context(memory, text)
     messages = [SystemMessage(content=SYSTEM)]
     messages.extend(HumanMessage(content=item["content"]) for item in history[-8:])
     messages.append(HumanMessage(content=(
         f"Documentation pertinente :\n{context}\n\n"
-        f"Résultat des contrôles live :\n{live_result or 'aucun contrôle déclenché'}\n\n"
         f"Demande actuelle : {text}"
     )))
     inf_start = time.perf_counter()
     try:
-        result = await llm.ainvoke(messages)
+        return await _invoke_with_tools(llm, messages)
     finally:
         # Latence d'inférence réelle, affichée par la fiche /model
         record_llm_latency(time.perf_counter() - inf_start)
-    return result.content
 
 
 def build_graph():
