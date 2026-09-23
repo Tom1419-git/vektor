@@ -100,21 +100,29 @@ class Memory:
                 chunks,
             )
 
-    async def search_knowledge(self, query: str, limit: int = 5) -> list[dict[str, str]]:
+    async def search_knowledge(
+        self, query: str, limit: int = 5
+    ) -> list[tuple[str, str, list[str]]]:
         """Candidats couvrant au moins un terme de la requête.
 
-        limit > 0 : top limit. limit <= 0 : tous les candidats (le
-        re-ranking fine vit dans rag.rank_chunks, côté applicatif)."""
+        Renvoie des tuples (source, content, terms) — le même contrat que
+        rag.load_chunks, pour que le re-ranking fin (IDF + bonus titre)
+        opère sur la même structure. limit > 0 : top limit (pré-ordre par
+        couverture brute). limit <= 0 : tous les candidats."""
         assert self.pool
         terms = {part.lower() for part in query.split() if len(part) > 2}
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("SELECT source, content, terms FROM knowledge_chunks")
-        ranked = []
+        candidates: list[tuple[str, str, list[str]]] = []
         for row in rows:
-            score = len(terms.intersection(set(row["terms"])))
-            if score:
-                ranked.append((score, {"source": row["source"], "content": row["content"]}))
-        ranked.sort(key=lambda item: item[0], reverse=True)
+            row_terms = list(row["terms"] or [])
+            if terms.intersection(row_terms):
+                candidates.append((row["source"], row["content"], row_terms))
         if limit <= 0:
-            return [item[1] for item in ranked]
-        return [item[1] for item in ranked[:limit]]
+            return candidates
+        # pré-ordre : couverture brute (le rank_chunks raffine ensuite)
+        pre = []
+        for source, content, row_terms in candidates:
+            pre.append((len(terms.intersection(row_terms)), source, content, row_terms))
+        pre.sort(key=lambda item: item[0], reverse=True)
+        return [(source, content, row_terms) for _, source, content, row_terms in pre[:limit]]
