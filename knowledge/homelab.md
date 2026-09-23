@@ -1,10 +1,10 @@
 # Connaissance Vektor (modèle)
 
 Ce fichier est un **exemple de structure** pour le RAG de Vektor.
-Remplace-le par la documentation de TON infrastructure (topologie, rôles,
-adresses) et garde-la hors de tout dépôt public si elle décrit un réseau
-réel. Sur le déploiement d'origine, ce fichier contient la topologie
-réelle et n'est **pas** versionné publiquement.
+Remplace-le par la documentation de l'infrastructure à documenter
+(topologie, rôles, adresses) et garde-la hors de tout dépôt public si
+elle décrit un réseau réel. Sur le déploiement d'origine, ce fichier
+contient la topologie réelle et n'est **pas** versionné publiquement.
 
 ## Modèle de contenu recommandé
 
