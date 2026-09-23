@@ -101,6 +101,10 @@ class Memory:
             )
 
     async def search_knowledge(self, query: str, limit: int = 5) -> list[dict[str, str]]:
+        """Candidats couvrant au moins un terme de la requête.
+
+        limit > 0 : top limit. limit <= 0 : tous les candidats (le
+        re-ranking fine vit dans rag.rank_chunks, côté applicatif)."""
         assert self.pool
         terms = {part.lower() for part in query.split() if len(part) > 2}
         async with self.pool.acquire() as conn:
@@ -111,4 +115,6 @@ class Memory:
             if score:
                 ranked.append((score, {"source": row["source"], "content": row["content"]}))
         ranked.sort(key=lambda item: item[0], reverse=True)
+        if limit <= 0:
+            return [item[1] for item in ranked]
         return [item[1] for item in ranked[:limit]]
