@@ -55,7 +55,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/dns : sonde des résolveurs DNS\n"
             "/monitoring : état des checks de monitoring\n"
             "/ping : diagnostic du chemin LLM (bridge, modèle, inférence)\n"
-            "/reload-doc : réindexer la documentation (après modification)\n"
+            "/reload : réindexer la documentation (après modification)\n"
             "/help : cette aide\n"
             "/forget : effacer toute ma mémoire de conversation\n\n"
             "Exemples :\n"
@@ -274,7 +274,7 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("dns", dns_cmd))
     application.add_handler(CommandHandler("monitoring", monitoring_cmd))
     application.add_handler(CommandHandler("ping", ping_cmd))
-    application.add_handler(CommandHandler("reload-doc", reload_doc))
+    application.add_handler(CommandHandler("reload", reload_doc))
     application.add_handler(CommandHandler("forget", forget))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.run_polling(allowed_updates=Update.ALL_TYPES)
