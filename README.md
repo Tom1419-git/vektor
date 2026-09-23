@@ -8,22 +8,22 @@
 Assistant personnel auto-hébergé « Jarvis » : omnicanal **Telegram + Alexa**,
 mémoire conversationnelle PostgreSQL, RAG sur la documentation d'infrastructure
 et **outils live en lecture seule** (Proxmox, Docker, services).
-Cerveau : **Qwen 2.5 14B** via Ollama, auto-hébergé sur ton propre serveur.
+Cerveau : **Qwen 2.5 14B** via Ollama, entièrement auto-hébergé.
 
 ## 🎯 Vektor en bref
 
-Vektor est un assistant qui vit sur ton serveur et te répond sur Telegram comme
-à l'oral via Alexa. **Il est capable de** : te donner l'état réel de ton
+Vektor est un assistant personnel auto-hébergé qui répond sur Telegram et à
+l'oral via Alexa. **Il est capable de** : fournir l'état réel d'une
 infrastructure en moins d'une seconde (CPU, RAM, stockage, conteneurs, services,
 torrents) sans jamais passer par le LLM pour les chiffres, répondre aux questions
-générales avec un LLM local enrichi de ta documentation et de la mémoire de vos
-conversations passées, et exécuter quelques actions d'administration (redémarrages,
-rescans, pause des téléchargements) toujours après une double confirmation `OUI`.
-**Il n'est pas capable de** : agir en agent autonome (le LLM ne décide rien ni
-n'exécute rien lui-même), faire une action hors de sa whitelist fermée, t'écouter
-en continu hors Alexa, ni servir plusieurs utilisateurs (whitelist stricte,
-mono-propriétaire). C'est un assistant fiable et verrouillé, pas une IA
-omnipotente — c'est un choix de sécurité assumé.
+générales avec un LLM local enrichi d'une documentation indexée (RAG) et de la
+mémoire des conversations passées, et exécuter quelques actions d'administration
+(redémarrages, rescans, pause des téléchargements) toujours après une double
+confirmation explicite. **Il n'est pas capable de** : agir en agent autonome (le
+LLM ne décide rien ni n'exécute rien lui-même), faire une action hors de sa
+whitelist fermée, écouter en continu hors Alexa, ni servir plusieurs
+utilisateurs (whitelist stricte, mono-utilisateur). C'est un assistant fiable
+et verrouillé, pas une IA omnipotente — un choix de sécurité assumé.
 
 > 📖 **Détail complet des capacités, limitations et latences mesurées :
 > [CAPACITES-V1.md](CAPACITES-V1.md)** — journal du déploiement problème par
@@ -108,7 +108,7 @@ pour éviter le démarrage à froid.
 
 ## Déploiement
 
-1. Copier `.env.example` vers `.env`.
+1. Copier `.env.example` vers `.env` (variables documentées dans le fichier).
 2. Générer un mot de passe PostgreSQL et un token API aléatoire.
 3. Renseigner `POSTGRES_PASSWORD`, `VEKTOR_API_TOKEN`, le modèle Ollama et la
    whitelist Telegram (user-ids autorisés, séparés par des virgules).
@@ -130,7 +130,7 @@ curl http://127.0.0.1:8092/health
 docker compose --profile telegram up -d telegram
 ```
 
-Pour le canal Alexa : endpoint HTTPS `https://<ton-domaine>/api/alexa` derrière
+Pour le canal Alexa : endpoint HTTPS `https://<domaine>/api/alexa` derrière
 reverse proxy, vérification cryptographique Amazon complète (signature, horizon
 temporel, skill ID) — interaction model et démarche détaillés dans
 [DEPLOIEMENT-V1.md](DEPLOIEMENT-V1.md).
@@ -150,9 +150,9 @@ temporel, skill ID) — interaction model et démarche détaillés dans
 
 ## Règles
 
-- Ne jamais mettre `.env` dans Git.
-- Ne pas réutiliser le token du bot d'administration existant.
-- Le RAG fournit un contexte documentaire ; les états sont vérifiés live.
+- `.env` ne doit jamais être commité.
+- Le token du bot ne doit pas être réutilisé depuis un bot d'administration existant.
+- Le RAG fournit un contexte documentaire ; les états sont vérifiés en direct.
 - Les secrets et clés privées sont exclus de `knowledge/`.
 
 ## Prochaines étapes (V2)
