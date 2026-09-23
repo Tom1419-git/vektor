@@ -1,19 +1,21 @@
 # Vektor — Capacités V1 & Limitations
 
-> Assistant personnel auto-hébergé, style Jarvis : **Telegram + Alexa**, cerveau LLM local
-> (Ollama), mémoire persistante et outillage d'infrastructure **en lecture seule par défaut**.
+> Assistant personnel auto-hébergé, style Jarvis : **canal Telegram en production**, canal
+> Alexa développé mais pas encore activé, cerveau LLM local (Ollama), mémoire persistante
+> et outillage d'infrastructure **en lecture seule par défaut**.
 
 ## Architecture en une phrase
 
-Un bot Telegram et une Skill Alexa parlent à une API FastAPI unique, qui répond soit
-**instantanément** avec des données live (sans LLM), soit interroge **Qwen 2.5 14B** via
-Ollama, enrichi du contexte RAG et de l'historique de conversation.
+Un bot Telegram (en production) et une Skill Alexa (développée, pas encore activée sur
+l'appareil) parlent à une API FastAPI unique, qui répond soit **instantanément** avec des
+données live (sans LLM), soit interroge **Qwen 2.5 14B** via Ollama, enrichi du contexte
+RAG et de l'historique de conversation.
 
 ```mermaid
 flowchart LR
     subgraph canaux["Canaux (omnicanal)"]
         TG["Bot Telegram<br/>whitelist user-id strict"]
-        AX["Skill Alexa<br/>endpoint signé Amazon"]
+        AX["Skill Alexa<br/>endpoint signé Amazon<br/>(non actif)"]
     end
     subgraph coeur["Coeur (VPS, Docker)"]
         API["FastAPI<br/>/api/chat /api/status /api/model"]
@@ -25,7 +27,7 @@ flowchart LR
     PVE["Homelab<br/>API Proxmox + SSH verrouillé"]
 
     TG --> API
-    AX --> API
+    AX -.->|"pas encore actif"| API
     API --> ACT
     API --> RAG
     API --> MEM
@@ -45,7 +47,7 @@ flowchart LR
 
 ### Assistant de vie quotidienne
 - Questions générales en français (le modèle répond avec ses connaissances propres)
-- Mémoire de conversation persistante (PostgreSQL) partagée entre Telegram et Alexa
+- Mémoire de conversation persistante (PostgreSQL), conçue pour être partagée entre les canaux
 - Historique contextuel (les 8 derniers échanges) envoyé au modèle à chaque tour
 - Commande `/forget` : efface toute la mémoire d'un utilisateur
 
@@ -84,8 +86,9 @@ Sonarr/Radarr, pause/reprise globale de qBittorrent.
   refusée, c'est voulu.
 - **RAG basique** : une seule source de documentation, découpage simple, pas de
   re-ranking ni de détection de "la doc ne répond pas".
-- **Pas de voix locale** : l'écoute continue (wake-word local, STT/TTS maison) est hors
-  périmètre V1 ; Alexa reste le seul canal vocal.
+- **Pas de voix opérationnelle** : la Skill Alexa est développée (serveur, signature
+  Amazon, SSML) et validée dans le simulateur, mais l'Echo physique ne déclenche pas
+  encore la skill ; l'écoute continue (wake-word local, STT/TTS maison) est hors périmètre V1
 - **Modèle 14B quantifié** : raisonnement limité sur les questions complexes, réponses
   parfois lentes (voir latences), risque d'hallucination sur les faits récents.
 - **Vocable français uniquement** : les patterns d'actions et le prompt sont en français.
