@@ -9,6 +9,7 @@ from .config import get_settings
 from .memory import Memory
 from .rag import retrieve_context
 from . import tools as t
+from . import watch as w
 from .tools import record_llm_latency
 from . import actions
 
@@ -76,7 +77,25 @@ async def rapport_seeds() -> str:
     return await t.seeds_report()
 
 
-READONLY_TOOLS = [etat_proxmox, liste_conteneurs, etat_stockage, inventaire_docker, statut_service, rapport_seeds]
+@tool
+async def derniers_backups() -> str:
+    """Dernières sauvegardes vzdump visibles par l'API Proxmox (âge, taille)."""
+    return await w.backups_report()
+
+
+@tool
+async def etat_dns() -> str:
+    """Sonde les résolveurs DNS configurés (DoH) sur un domaine de test."""
+    return await w.dns_report()
+
+
+@tool
+async def etat_monitoring() -> str:
+    """État des checks de monitoring (Healthchecks.io) : ok, en retard, down."""
+    return await w.monitoring_report()
+
+
+READONLY_TOOLS = [etat_proxmox, liste_conteneurs, etat_stockage, inventaire_docker, statut_service, rapport_seeds, derniers_backups, etat_dns, etat_monitoring]
 TOOLS_BY_NAME = {tool_item.name: tool_item for tool_item in READONLY_TOOLS}
 
 
