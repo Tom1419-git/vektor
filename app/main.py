@@ -355,18 +355,25 @@ const $ = id => document.getElementById(id);
 let token = sessionStorage.vektorToken || '';
 
 function show() {
-  $('gate').remove();
+  const gate = $('gate');
+  if (gate) gate.remove();
   $('log').hidden = false; $('f').hidden = false; $('t').focus();
 }
-if (token) show();
 
 function enter() {
-  token = $('tok').value.trim();
+  const field = $('tok');
+  if (!field) return;
+  token = field.value.trim();
   if (!token) return;
   sessionStorage.vektorToken = token;
   show();
 }
-$('tok').addEventListener('keydown', e => { if (e.key === 'Enter') enter(); });
+
+// Les listeners sont attachés AVANT tout retrait du formulaire de
+// connexion : avec un token déjà en session, #gate n'existe plus au
+// chargement — un listener sur un élément absent tuerait tout le script.
+const tokField = $('tok');
+if (tokField) tokField.addEventListener('keydown', e => { if (e.key === 'Enter') enter(); });
 
 function bubble(text, cls) {
   const d = document.createElement('div');
@@ -405,6 +412,8 @@ $('f').addEventListener('submit', e => {
   $('t').value = '';
   ask(text);
 });
+
+if (token) show();
 </script>
 </body>
 </html>"""
