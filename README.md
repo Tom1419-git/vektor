@@ -174,7 +174,9 @@ La V2 ouvre le projet vers un vrai assistant, sans changer l'architecture.
 | 2 | **Tool-calling natif** | Passer au tool-calling LangChain (`bind_tools`) : le LLM choisit lui-même quand interroger l'infra, au lieu du routeur par mots-clés — avec garde-fous : whitelist inchangée, double confirmation conservée | ✅ livré |
 | 3 | **Assistant vocal local (wake-word RPi)** | openWakeWord + Whisper (STT) + Piper (TTS) sur Raspberry Pi : un canal vocal indépendant d'Amazon, branché sur la même API | 📋 planifié |
 | 4 | **RAG enrichi** | Plusieurs sources de documentation, re-ranking des extraits, détection « la doc ne répond pas » pour limiter l'hallucination | ✅ livré (sections titre+corps, re-ranking IDF, détection hors sujet) |
-| 5 | **Périmètre outils élargi** | Backups, DNS et monitoring en lecture seule via API avec credentials dédiés aux permissions minimales — jamais d'outil shell générique | ✅ livré (`/api/backups`, `/api/dns`, `/api/monitoring`) |
+| 5 | **Périmètre outils élargi** | Backups, DNS et monitoring en lecture seule via API avec credentials dédiées aux permissions minimales — jamais d'outil shell générique | ✅ livré (`/api/backups`, `/api/dns`, `/api/monitoring`) |
+| 6 | **Canal web** | Mini client de chat servi par l'API (`/web`), token en sessionStorage, même agent que Telegram | ✅ livré (v1.5.0) |
+| 7 | **Auto-supervision & multi-endpoint LLM** | Heartbeat Healthchecks du bot (down = bot mort), auto-test horaire des commandes avec alerte, réindexation auto de la doc, endpoint LLM de secours (machine locale via VPN, détecté au vol) | ✅ livré (v1.5.0) |
 
 La règle transversale reste la même pour toute la V2 : le LLM peut demander,
 jamais exécuter seul — toute action d'écriture passe toujours par la whitelist
