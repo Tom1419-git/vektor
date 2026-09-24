@@ -34,6 +34,10 @@ MONITORING_URL = os.environ.get("VEKTOR_MONITORING_URL", "http://vektor-api:8000
 PING_URL = os.environ.get("VEKTOR_PING_URL", "http://vektor-api:8000/api/ping")
 RELOAD_URL = os.environ.get("VEKTOR_RELOAD_URL", "http://vektor-api:8000/api/reload-doc")
 FORGET_URL = os.environ.get("VEKTOR_FORGET_URL", "http://vektor-api:8000/api/forget")
+# Heartbeat du bot (auto-supervision v1.5.0) : URL de ping Healthchecks du
+# check dédié au bot. Vide = désactivé. Si le bot crash, le check passe
+# down et alerte — le crash du bot est invisible partout ailleurs.
+HC_PING_URL = os.environ.get("VEKTOR_HC_PING_URL", "").strip()
 API_TOKEN = os.environ.get("VEKTOR_API_TOKEN", "")
 HEADERS = {"X-Vektor-Token": API_TOKEN}
 
@@ -368,6 +372,66 @@ async def post_init(application: Application) -> None:
             total,
             total,
         )
+
+    application.create_task(_heartbeat_loop())
+    application.create_task(_periodic_autotest_loop(application))
+
+
+async def _heartbeat_loop(interval: int = 300) -> None:
+    """Ping le check Healthchecks du bot toutes les 5 min : si le bot meurt,
+    le check passe down et alerte tout seul (auto-supervision)."""
+    if not HC_PING_URL:
+        return
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.post(HC_PING_URL)
+            logger.info("heartbeat Healthchecks : HTTP %s", response.status_code)
+        except Exception as exc:
+            logger.warning("heartbeat Healthchecks impossible : %s", exc.__class__.__name__)
+
+
+async def _periodic_autotest_loop(
+    application: Application,
+    interval: int = 3600,
+    reminder_every: int = 6,
+) -> None:
+    """Rejoue l'auto-test toutes les heures (l'API peut mourir en cours de vie).
+
+    Alerte Telegram sur transition OK -> KO, rappel toutes les
+    `reminder_every` heures tant que ça dure, message de rétablissement."""
+    was_ok = True
+    failures_in_a_row = 0
+    while True:
+        await asyncio.sleep(interval)
+        problems = await autotest_endpoints()
+        if problems:
+            failures_in_a_row += 1
+            logger.error(
+                "AUTO-TEST périodique : %d problème(s)\n%s",
+                len(problems),
+                "\n".join(f"  - {p}" for p in problems),
+            )
+            if was_ok or failures_in_a_row % reminder_every == 0:
+                was_ok = False
+                await _alert_owner(application, "🚨 Vektor — auto-test périodique : commandes muettes !\n" + "\n".join(f"• {p}" for p in problems))
+        else:
+            if not was_ok:
+                logger.info("AUTO-TEST périodique : rétabli")
+                await _alert_owner(application, "🟢 Vektor — auto-test rétabli : toutes les commandes répondent à nouveau.")
+            was_ok = True
+            failures_in_a_row = 0
+
+
+async def _alert_owner(application: Application, text: str) -> None:
+    chat_id = next(iter(ALLOWED), None)
+    if chat_id is None:
+        return
+    try:
+        await application.bot.send_message(chat_id=chat_id, text=text)
+    except Exception:
+        logger.exception("Notification propriétaire impossible")
 
 
 if __name__ == "__main__":

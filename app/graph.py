@@ -1,8 +1,10 @@
 from typing import TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
+import logging
 import time
 
+import httpx
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 from .config import get_settings
@@ -12,6 +14,8 @@ from . import tools as t
 from . import watch as w
 from .tools import record_llm_latency
 from . import actions
+
+logger = logging.getLogger("vektor.graph")
 
 SYSTEM = """Tu es Vektor, l'assistant personnel de Thomas.
 Identité technique : tu es le modèle Qwen 2.5 14B (Alibaba Cloud) auto-hébergé via Ollama.
@@ -152,17 +156,35 @@ async def _invoke_with_tools(llm, messages: list, max_rounds: int = 3) -> str:
     return final.content
 
 
-async def run_agent(memory: Memory, text: str, history: list[dict[str, str]], user_key: str = "default") -> str:
+async def _pick_llm(base_url: str, model: str) -> ChatOllama:
+    """Construit le LLM pour l'endpoint demandé (pas d'attribut timeout sur
+    ChatOllama : le plafond effectif est le timeout HTTP du canal appelant)."""
+    return ChatOllama(base_url=base_url, model=model, temperature=0.1, keep_alive="2h")
+
+
+async def select_llm() -> tuple[ChatOllama, str]:
+    """Choisit l'endpoint d'inférence : primaire s'il répond, fallback
+    (OLLAMA_FALLBACK_URL, ex. machine locale via VPN) sinon.
+
+    Sonde légère /api/tags (3 s). Fallback vide ou injoignable → primaire :
+    une machine éteinte ne produit jamais d'erreur visible."""
     settings = get_settings()
-    llm = ChatOllama(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_model,
-        temperature=0.1,
-        # keep_alive 2h : le modèle reste chargé en RAM (9 GB) pour des
-        # réponses immédiates, tout en laissant ~12 GB libres pour
-        # Minecraft et les autres services du VPS.
-        keep_alive="2h",
-    )
+    fallback_url = settings.ollama_fallback_url.strip()
+    if fallback_url:
+        try:
+            async with httpx.AsyncClient(timeout=3) as client:
+                response = await client.get(f"{fallback_url.rstrip('/')}/api/tags")
+            if response.status_code == 200:
+                return await _pick_llm(fallback_url, settings.ollama_model), "fallback"
+        except httpx.HTTPError:
+            pass
+    return await _pick_llm(settings.ollama_base_url, settings.ollama_model), "primaire"
+
+
+async def run_agent(memory: Memory, text: str, history: list[dict[str, str]], user_key: str = "default") -> str:
+    llm, source = await select_llm()
+    if source == "fallback":
+        logger.info("LLM : endpoint fallback (machine locale) utilisé")
 
     # 1. Confirmation en attente ? (le OUI n'exécute QUE l'action proposée)
     confirmation = await actions.confirm_pending(text, user_key)

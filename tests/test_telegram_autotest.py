@@ -90,9 +90,15 @@ async def test_autotendpoints_post_only_reste_verte():
 
 
 def test_table_autotest_couplee_aux_constantes_urls():
-    """Toute constante *_URL du bot doit être sondée par l'auto-test."""
+    """Toute constante *_URL du bot doit être sondée par l'auto-test.
+
+    Exclusion explicite : HC_PING_URL = heartbeat Healthchecks (le bot
+    n'appelle pas l'API Vektor avec, il signale sa vie à Healthchecks)."""
     attrs = {attr for attr, _ep, _what in tg._COMMAND_ENDPOINTS}
     url_attrs = {name for name in dir(tg) if name.endswith("_URL")}
-    assert attrs == url_attrs, "une URL de commande n'est pas couverte par l'auto-test"
+    assert attrs == url_attrs - {"HC_PING_URL"}, (
+        "une URL de commande n'est pas couverte par l'auto-test "
+        "(ou une exclusion manque à la liste ci-dessus)"
+    )
     for attr, endpoint, _what in tg._COMMAND_ENDPOINTS:
         assert getattr(tg, attr).endswith(endpoint), f"{attr} ne pointe pas sur {endpoint}"
