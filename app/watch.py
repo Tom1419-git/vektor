@@ -152,7 +152,7 @@ async def dns_report() -> str:
         return "DNS : aucun résolveur configuré (VEKTOR_DNS_RESOLVERS)."
     probe = DNS_PROBES[0].strip() or "example.com"
 
-    lines: list[str] = [f"🌐 **DNS** — sonde `{probe}`"]
+    lines: list[str] = [f"🌐 **DNS** — sonde `{probe}` posée à chaque résolveur"]
     async with httpx.AsyncClient(timeout=6, verify=False) as client:
         for name, url in sorted(DNS_RESOLVERS.items()):
             try:
@@ -189,10 +189,18 @@ async def dns_report() -> str:
                     else ("NOERROR, 0 adresse" if rcode == 0 else f"RCODE {rcode}")
                 )
                 icon = "🟢" if rcode == 0 else "🟡"
-                lines.append(f"{icon} {name} : {detail}")
+                # Afficher l'adresse du résolveur sondé : les IP listées après
+                # la flèche sont la RÉPONSE à la sonde (ex. example.com est
+                # hébergé chez Cloudflare -> toujours 104.20.x/172.66.x),
+                # jamais les adresses des résolveurs eux-mêmes.
+                cible = f" ({url[6:]})" if url.startswith("udp://") else ""
+                lines.append(f"{icon} {name}{cible} : {probe} → {detail}")
             except (httpx.HTTPError, ValueError, OSError) as exc:
                 lines.append(f"🔴 {name} : injoignable ({exc.__class__.__name__})")
-    lines.append("\n_Sonde lecture seule — aucune modification DNS._")
+    lines.append(
+        "\n_Après la flèche : adresses renvoyées POUR la sonde "
+        "(pas les IP des résolveurs). Lecture seule, aucune modification DNS._"
+    )
     return "\n".join(lines)
 
 
