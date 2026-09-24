@@ -16,16 +16,21 @@ ALLOWED = {
     for value in os.environ.get("TELEGRAM_ALLOWED_USER_IDS", "").split(",")
     if value.strip()
 }
-API_URL = os.environ.get("VEKTOR_API_URL", "http://127.0.0.1:8000/api/chat")
-STATUS_URL = os.environ.get("VEKTOR_STATUS_URL", "http://127.0.0.1:8000/api/status")
-MODEL_URL = os.environ.get("VEKTOR_MODEL_URL", "http://127.0.0.1:8000/api/model")
-SEEDS_URL = os.environ.get("VEKTOR_SEEDS_URL", "http://127.0.0.1:8000/api/seeds")
-BACKUPS_URL = os.environ.get("VEKTOR_BACKUPS_URL", "http://127.0.0.1:8000/api/backups")
-DNS_URL = os.environ.get("VEKTOR_DNS_URL", "http://127.0.0.1:8000/api/dns")
-MONITORING_URL = os.environ.get("VEKTOR_MONITORING_URL", "http://127.0.0.1:8000/api/monitoring")
-PING_URL = os.environ.get("VEKTOR_PING_URL", "http://127.0.0.1:8000/api/ping")
-RELOAD_URL = os.environ.get("VEKTOR_RELOAD_URL", "http://127.0.0.1:8000/api/reload-doc")
-FORGET_URL = os.environ.get("VEKTOR_FORGET_URL", "http://127.0.0.1:8000/api/forget")
+# Défauts = service Docker `vektor-api`. Dans le conteneur telegram,
+# 127.0.0.1 est SON propre loopback (aucune API n'y écoute) : un défaut
+# local rend la commande muette en prod (bug « impossible de sonder les
+# résolveurs » v1.3.5). Toute nouvelle commande doit suivre ce contrat —
+# voir tests/test_telegram_urls.py.
+API_URL = os.environ.get("VEKTOR_API_URL", "http://vektor-api:8000/api/chat")
+STATUS_URL = os.environ.get("VEKTOR_STATUS_URL", "http://vektor-api:8000/api/status")
+MODEL_URL = os.environ.get("VEKTOR_MODEL_URL", "http://vektor-api:8000/api/model")
+SEEDS_URL = os.environ.get("VEKTOR_SEEDS_URL", "http://vektor-api:8000/api/seeds")
+BACKUPS_URL = os.environ.get("VEKTOR_BACKUPS_URL", "http://vektor-api:8000/api/backups")
+DNS_URL = os.environ.get("VEKTOR_DNS_URL", "http://vektor-api:8000/api/dns")
+MONITORING_URL = os.environ.get("VEKTOR_MONITORING_URL", "http://vektor-api:8000/api/monitoring")
+PING_URL = os.environ.get("VEKTOR_PING_URL", "http://vektor-api:8000/api/ping")
+RELOAD_URL = os.environ.get("VEKTOR_RELOAD_URL", "http://vektor-api:8000/api/reload-doc")
+FORGET_URL = os.environ.get("VEKTOR_FORGET_URL", "http://vektor-api:8000/api/forget")
 API_TOKEN = os.environ.get("VEKTOR_API_TOKEN", "")
 HEADERS = {"X-Vektor-Token": API_TOKEN}
 

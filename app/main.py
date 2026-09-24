@@ -235,7 +235,7 @@ async def backups_endpoint(x_vektor_token: str | None = Header(default=None)):
 
 @app.get("/api/dns")
 async def dns_endpoint(x_vektor_token: str | None = Header(default=None)):
-    """Sonde DoH des résolveurs configurés. Lecture seule."""
+    """Sonde multi-transport (UDP wire/DoH) des résolveurs. Lecture seule."""
     require_token(x_vektor_token)
     return {"report": await watch_mod.dns_report()}
 
