@@ -26,7 +26,8 @@ Alexa (EU, HTTPS) ──┘         │
                               └─→ PostgreSQL (mémoire conversationnelle multi-canal)
 
 Réseau : API sur le réseau Docker de Caddy (accès interne par nom,
-aucun port publié) ; Telegram passe par 127.0.0.1:8000 publié en loopback ;
+aucun port publié) ; Telegram appelle l'API par le nom de service Docker
+(`http://vektor-api:8000`, JAMAIS 127.0.0.1 = loopback du conteneur bot) ;
 Ollama ponté par socat host-network lié uniquement à la passerelle Docker.
 ```
 
@@ -48,7 +49,8 @@ vektor/
 │   ├── graph.py      # run_agent : routage → LLM (Ollama, keep_alive) + prompts FR
 │   ├── tools.py      # outils live : PVE, Docker, checks HTTP, /status complet
 │   ├── alexa.py      # vérif signature Amazon + SSML + réponses progressives
-│   ├── telegram.py   # bot : /start /help /status /forget, whitelist, messages longs
+│   ├── telegram.py   # bot : 11 commandes + chat libre, whitelist, messages longs,
+│   │                 #      auto-test des URLs au démarrage (log + alerte Telegram)
 │   ├── memory.py     # PostgreSQL : conversations, messages, RAG
 │   ├── rag.py        # indexation/recherche pgvector
 │   └── config.py     # Settings pydantic (env)
@@ -218,6 +220,91 @@ ssh vps 'cd /opt/vektor && docker compose up -d --build'
 # décharger le modèle si RAM VPS critique
 ssh vps 'curl -s http://127.0.0.1:11434/api/generate -d "{\"model\":\"qwen2.5:14b\",\"keep_alive\":0}"'
 ```
+
+### Checklist post-déploiement (depuis v1.3.6 — à exécuter À CHAQUE mise en prod)
+
+`/health` en 200 ne prouve RIEN d'autre que l'API tourne : le crash du bot
+Telegram est invisible dedans, et une commande muette (bot → API rompu)
+aussi. Cette checklist est née du bug v1.3.6 : les commandes étendues
+répondaient côté API (sondes vertes sur les endpoints) alors que la
+commande Telegram était muette depuis leur création — personne ne les
+avait testées en vrai.
+
+```bash
+# 1. Build + recreate — un simple restart ne relit NI le code NI l'env
+ssh vps 'cd /opt/vektor && docker compose --profile telegram up -d --build --force-recreate api telegram'
+
+# 2. compose.yml intact : le tar de déploiement ne doit JAMAIS le contenir
+#    (comparer au MD5 de référence, sinon les volumes/env compose sont perdus)
+ssh vps 'md5sum /opt/vektor/compose.yml /root/compose-vektor-REF.yml'
+
+# 3. Volumes (knowledge-live surtout) + état des 4 conteneurs
+ssh vps 'docker inspect vektor-api --format "{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}"'
+#    attendu : <chemin-prod>/knowledge-live -> /app/knowledge
+ssh vps 'docker ps --filter name=vektor'   # vektor-telegram Up — son crash ne se voit PAS dans /health
+
+# 4. AUTO-TEST du bot (v1.3.7) : URLs réellement utilisées + token vérifié,
+#    avec retries pour couvrir la course de démarrage api/telegram
+ssh vps 'docker logs vektor-telegram | grep AUTO-TEST'
+#    attendu : « 10/10 commandes -> API OK (token vérifié via sonde DNS) »
+#    sinon : log ERROR détaillé + message 🚨 envoyé sur Telegram
+
+# 5. URLs effectives du bot — anti-régression v1.3.6
+ssh vps 'docker exec vektor-telegram python -c "import app.telegram as t; print(t.DNS_URL, t.SEEDS_URL, t.BACKUPS_URL, t.MODEL_URL, t.MONITORING_URL, t.RELOAD_URL)"'
+#    RÈGLE : aucune URL en 127.0.0.1/localhost — c'est le loopback du
+#    CONTENEUR telegram, où aucune API n'écoute (= commande muette).
+#    Défauts du code et env compose doivent viser le service `vektor-api`.
+
+# 6. Test RÉEL des commandes, depuis le conteneur telegram (comme le bot)
+ssh vps 'docker exec vektor-telegram python -c "
+import os, httpx
+H = {\"X-Vektor-Token\": os.environ[\"VEKTOR_API_TOKEN\"]}
+for ep in (\"dns\", \"status\", \"seeds\", \"backups\", \"model\", \"monitoring\"):
+    r = httpx.get(f\"http://vektor-api:8000/api/{ep}\", headers=H, timeout=90)
+    print(ep, r.status_code, r.json().get(\"report\", \"\").splitlines()[0][:60])
+"'
+#    attendu : 200 partout avec une première ligne de rapport cohérente
+
+# 7. reload-doc + chat LLM avec tool-calling (la 2e inférence + l'outil)
+ssh vps 'docker exec vektor-telegram python -c "
+import os, httpx
+H = {\"X-Vektor-Token\": os.environ[\"VEKTOR_API_TOKEN\"]}
+print(httpx.post(\"http://vektor-api:8000/api/reload-doc\", headers=H, timeout=60).status_code)
+r = httpx.post(\"http://vektor-api:8000/api/chat\", headers=H, timeout=300,
+               json={\"user_id\": \"test\", \"channel\": \"web\", \"text\": \"sonde les résolveurs DNS\"})
+print(r.status_code, r.json()[\"response\"][:120])
+"'
+
+# 8. Canal Telegram : polling seul, pas de webhook, 0 update en attente
+ssh vps 'docker exec vektor-telegram python -c "
+import os, httpx
+t = os.environ[\"TELEGRAM_BOT_TOKEN\"]
+print(httpx.get(f\"https://api.telegram.org/bot{t}/getMe\", timeout=10).json()[\"ok\"])
+print(httpx.get(f\"https://api.telegram.org/bot{t}/getWebhookInfo\", timeout=10).json()[\"result\"])
+"'
+ssh vps 'docker logs vektor-telegram 2>&1 | grep -cE "Traceback|ERROR|Conflict"'   # attendu : 0
+
+# 9. Env critique (toute modif : sed ciblé + backup .env.bak-<date>, jamais
+#    réécrire le .env entier — c'est comme ça qu'une variable a disparu)
+ssh vps 'grep -E "VEKTOR_DNS_RESOLVERS|OLLAMA_NETBIRD_HOST|VEKTOR_HC|VEKTOR_SERVICES" /opt/vektor/.env'
+
+# 10. Healthchecks : 0 check down. Un check down = job mort OU ping HC perdu
+#     (le job peut réussir sans pinger : vérifier le script côté PVE)
+#     → /api/monitoring doit afficher tous les checks up
+```
+
+Avant tout push : suite pytest locale verte (le contrat « défauts d'URL =
+service API » est verrouillé par `tests/test_telegram_urls.py`, l'auto-test
+par `tests/test_telegram_autotest.py`).
+
+### Leçons v1.3.6 → v1.3.8
+
+| Symptôme | Cause réelle | Correctif durable |
+|---|---|---|
+| Commandes muettes (/dns, /seeds…) sans aucune erreur | défauts d'URL `127.0.0.1` = loopback du conteneur bot | défauts = service Docker `vektor-api` + auto-test au démarrage (log + Telegram) |
+| `/seeds` : « authentification impossible » | creds qBit mortes après rotation du mot de passe | scripts en appel direct (bypass whitelist LAN), plus de creds stockées |
+| Check Healthchecks down alors que le job réussit | ping HC perdu dans une réécriture du script | le ping HC fait partie du contrat du script, pas une option |
+| IPs du rapport /dns prises pour celles des résolveurs | la sonde montre la réponse POUR le domaine sondé (example.com = Cloudflare) | ligne = résolveur (son adresse) : sonde → réponse |
 
 Sauvegardes : `/opt/vektor` (compose + .env) et le volume `postgres-data`
 sont couverts par les backups VPS existants ; la mémoire conversationnelle
