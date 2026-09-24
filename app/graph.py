@@ -29,6 +29,11 @@ comment marche X, est-ce que Y tourne, quel modèle, RAM, disque, DNS, backups..
 APPELLE DIRECTEMENT l'outil pertinent sans demander la permission — c'est ta
 façon normale de répondre, pas une action à confirmer. Seules les ACTIONS
 D'ÉCRITURE (redémarrer, arrêter, modifier) exigent une confirmation OUI.
+RÈGLE MULTI-TÂCHES : si le message contient PLUSIEURS questions ou demandes
+(ex. « vérifie X et dis-moi si Y »), traite-les TOUTES, une par une, en
+appelant chaque outil nécessaire (tu peux enchaîner plusieurs tours d'outils
+avant de répondre), puis structure ta réponse point par point. Ne réponds
+jamais à une seule partie de la demande.
 Après un appel d'outil, réponds à partir de son résultat : cite les valeurs
 telles quelles, sans les inventer. Si aucun outil ni la documentation ne
 répondent à la question, dis-le en une phrase, puis réponds quand même avec
@@ -103,31 +108,46 @@ async def etat_monitoring() -> str:
     return await w.monitoring_report()
 
 
-READONLY_TOOLS = [etat_proxmox, liste_conteneurs, etat_stockage, inventaire_docker, statut_service, rapport_seeds, derniers_backups, etat_dns, etat_monitoring]
+@tool
+async def recherche_bibliotheque(query: str) -> str:
+    """Cherche un film ou une série dans la bibliothèque Jellyfin.
+
+    À appeler pour toute demande du type « ai-je le film X », « est-ce que
+    la série Y est sur Jellyfin ». Accepte un titre (partiel ok)."""
+    return await t.jellyfin_search(query)
+
+
+READONLY_TOOLS = [etat_proxmox, liste_conteneurs, etat_stockage, inventaire_docker, statut_service, rapport_seeds, derniers_backups, etat_dns, etat_monitoring, recherche_bibliotheque]
 TOOLS_BY_NAME = {tool_item.name: tool_item for tool_item in READONLY_TOOLS}
 
 
-async def _invoke_with_tools(llm, messages: list) -> str:
-    """Inférence avec outils : si le modèle demande un outil (lecture seule),
-    l'exécute, injecte le résultat et régénère la réponse finale."""
+async def _invoke_with_tools(llm, messages: list, max_rounds: int = 3) -> str:
+    """Inférence avec outils en plusieurs passes (max 3 par défaut).
+
+    Chaque passe exécute TOUS les outils demandés puis réinjecte les
+    résultats : le modèle peut enchaîner les vérifications (d'abord un
+    état de service, puis une recherche bibliothèque...) avant de
+    répondre — indispensable pour les messages à plusieurs tâches."""
     llm_with_tools = llm.bind_tools(READONLY_TOOLS)
-    first = await llm_with_tools.ainvoke(messages)
-    tool_calls = getattr(first, "tool_calls", None)
-    if not tool_calls:
-        return first.content
+    for _round in range(max_rounds):
+        answer = await llm_with_tools.ainvoke(messages)
+        tool_calls = getattr(answer, "tool_calls", None)
+        if not tool_calls:
+            return answer.content
 
-    messages.append(first)
-    for call in tool_calls:
-        selected = TOOLS_BY_NAME.get(call["name"])
-        if selected is None:
-            result = f"Outil inconnu ou non autorisé : {call['name']}"
-        else:
-            try:
-                result = str(await selected.ainvoke(call.get("args") or {}))
-            except Exception as exc:  # un outil en panne ne doit pas casser la réponse
-                result = f"Outil indisponible ({exc.__class__.__name__})."
-        messages.append(ToolMessage(content=result, tool_call_id=call["id"]))
+        messages.append(answer)
+        for call in tool_calls:
+            selected = TOOLS_BY_NAME.get(call["name"])
+            if selected is None:
+                result = f"Outil inconnu ou non autorisé : {call['name']}"
+            else:
+                try:
+                    result = str(await selected.ainvoke(call.get("args") or {}))
+                except Exception as exc:  # un outil en panne ne doit pas casser la réponse
+                    result = f"Outil indisponible ({exc.__class__.__name__})."
+            messages.append(ToolMessage(content=result, tool_call_id=call["id"]))
 
+    # Plafond de passes atteint : réponse construite sur ce qui est déjà collecté
     final = await llm.ainvoke(messages)
     return final.content
 

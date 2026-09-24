@@ -111,3 +111,71 @@ async def test_sans_tool_call_reponse_directe():
     assert answer == "réponse simple"
     # bind_tools a bien été appelé avec les outils lecture seule
     assert llm.bound and llm.bound[0] == graph.READONLY_TOOLS
+
+
+class MultiRoundsLLM(FakeLLM):
+    """Enchaîne 2 passes d'outils (service puis bibliothèque) avant de répondre —
+    le cas « vérifie jellyfin et dis-moi si j'ai le film X »."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rounds = 0
+
+    async def ainvoke(self, messages):
+        self.calls.append(messages)
+        self.rounds += 1
+        if self.rounds == 1:
+            return _FakeResult(tool_calls=[{"name": "statut_service", "args": {"service": "jellyfin"}, "id": "c1"}])
+        if self.rounds == 2:
+            return _FakeResult(tool_calls=[{"name": "recherche_bibliotheque", "args": {"query": "cars"}, "id": "c2"}])
+        tool_outputs = [getattr(m, "content", "") for m in messages if getattr(m, "type", "") == "tool"]
+        return _FakeResult(f"réponse multi ({len(tool_outputs)} résultats)")
+
+    def bind_tools(self, tools):
+        self.bound.append(list(tools))
+        return self
+
+
+async def test_multi_passes_deux_outils_enchaines(monkeypatch):
+    async def fake_check(service):
+        return f"{service}: HTTP 200"
+
+    async def fake_search(query):
+        return f"1 résultat pour « {query} »"
+
+    monkeypatch.setattr(graph.t, "check_service", fake_check)
+    monkeypatch.setattr(graph.t, "jellyfin_search", fake_search)
+    llm = MultiRoundsLLM()
+    answer = await graph._invoke_with_tools(llm, [])
+    # Les DEUX résultats d'outils sont disponibles pour la réponse finale
+    assert "(2 résultats)" in answer
+    assert llm.rounds == 3
+
+
+async def test_plafond_de_passes_reponse_quand_meme(monkeypatch):
+    """Un modèle qui bouclerait indéfiniment ne bloque pas l'agent."""
+
+    class LoopingLLM(MultiRoundsLLM):
+        async def ainvoke(self, messages):
+            self.calls.append(messages)
+            self.rounds += 1
+            return _FakeResult(
+                content="je dois encore vérifier",
+                tool_calls=[{"name": "etat_proxmox", "args": {}, "id": f"c{self.rounds}"}],
+            )
+
+    async def fake_summary():
+        return "Noeud test"
+
+    monkeypatch.setattr(graph.t, "pve_summary", fake_summary)
+    llm = LoopingLLM()
+    answer = await graph._invoke_with_tools(llm, [], max_rounds=3)
+    # Au plafond : une dernière inférence produit la réponse (le contenu
+    # du modèle, pas un énième tool_call)
+    assert answer == "je dois encore vérifier"
+    assert llm.rounds == 4  # 3 passes d'outils + 1 appel final
+
+
+async def test_recherche_bibliotheque_exposee_lecture_seule():
+    names = {tool_item.name for tool_item in graph.READONLY_TOOLS}
+    assert "recherche_bibliotheque" in names

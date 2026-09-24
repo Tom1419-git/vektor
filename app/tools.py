@@ -255,6 +255,47 @@ async def seeds_report() -> str:
     return await _status_channel("vektor-status seeds")
 
 
+async def jellyfin_search(query: str) -> str:
+    """Recherche un film ou une série dans la bibliothèque Jellyfin.
+
+    Lecture seule : /Items avec searchTerm. Clé via VEKTOR_JELLYFIN_TOKEN,
+    URL du service via VEKTOR_SERVICES (jellyfin=...)."""
+    url = SERVICE_URLS.get("jellyfin")
+    token = os.environ.get("VEKTOR_JELLYFIN_TOKEN", "")
+    if not url or not token:
+        return "Recherche Jellyfin non configurée (VEKTOR_JELLYFIN_TOKEN)."
+    term = query.strip()
+    if not term:
+        return "Recherche Jellyfin : titre vide."
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            response = await client.get(
+                f"{url.rstrip('/')}/Items",
+                # Jellyfin 12+ refuse l'ancien header X-Emby-Token (401) :
+                # la forme Authorization MediaBrowser est la voie valide.
+                headers={"Authorization": f'MediaBrowser Token="{token}"'},
+                params={
+                    "searchTerm": term,
+                    "Recursive": "true",
+                    "IncludeItemTypes": "Movie,Series",
+                    "Limit": "5",
+                },
+            )
+        if response.status_code != 200:
+            return f"Jellyfin : recherche impossible (HTTP {response.status_code})."
+        items = response.json().get("Items") or []
+    except httpx.HTTPError as exc:
+        return f"Jellyfin : injoignable ({exc.__class__.__name__})."
+    if not items:
+        return f"Aucun titre trouvé pour « {term} » dans la bibliothèque Jellyfin."
+    lines = [f"Bibliothèque Jellyfin — {len(items)} résultat(s) pour « {term} » :"]
+    for item in items:
+        kind = "Film" if item.get("Type") == "Movie" else "Série"
+        year = item.get("ProductionYear") or "?"
+        lines.append(f"- {kind} : {item.get('Name', '?')} ({year})")
+    return "\n".join(lines)
+
+
 async def check_service(name: str) -> str:
     url = SERVICE_URLS.get(name.lower())
     if not url:
@@ -353,6 +394,16 @@ async def full_status_report() -> str:
 async def infra_live_report(text: str) -> str | None:
     low = text.lower()
     parts: list[str] = []
+
+    # Multi-tâches : « check l'état de jellyfin et dis-moi si j'ai le film
+    # cars » — un court-circuit ici ne traiterait que la 1re partie et la
+    # 2e question serait perdue. Toute demande combinée va au LLM, qui
+    # orchestre toutes les parties avec ses outils.
+    if re.search(
+        r"\b(dis[- ]?moi|cherche|trouve|est[- ]ce que|si j'ai|si j ai|puis|ensuite|aussi|peux[- ]tu|fais[- ]moi)\b",
+        low,
+    ):
+        return None
 
     services = [name for name in SERVICE_URLS if name in low]
     if services:

@@ -41,6 +41,35 @@ async def test_explain_question_does_not_trigger_live(monkeypatch):
     assert report is None
 
 
+async def test_multi_taches_passe_au_llm(monkeypatch):
+    """« check l'état de jellyfin et dis-moi si j'ai le film cars » : deux
+    tâches — le court-circuit live ne traiterait que la 1re. Le garde-fou
+    renvoie None pour que le LLM orchestre les deux avec ses outils."""
+
+    async def fail_check(name):
+        raise AssertionError("le multi-tâches ne doit pas être court-circuité")
+
+    monkeypatch.setattr(tools, "check_service", fail_check)
+    report = await tools.infra_live_report(
+        "check letat de jellyfin et dis moi si j ai le film cars"
+    )
+    assert report is None
+
+
+async def test_service_seul_toujours_court_circuite(monkeypatch):
+    """Une demande mono-service simple garde le chemin live instantané."""
+    calls = []
+
+    async def fake_check(name):
+        calls.append(name)
+        return f"{name}: HTTP 200 depuis le contrôle live."
+
+    monkeypatch.setattr(tools, "check_service", fake_check)
+    report = await tools.infra_live_report("état de jellyfin")
+    assert calls == ["jellyfin"]
+    assert "jellyfin" in report
+
+
 async def test_service_check_hit_and_miss(monkeypatch):
     class FakeResponse:
         status_code = 200
