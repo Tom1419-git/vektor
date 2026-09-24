@@ -336,6 +336,11 @@ _WEB_PAGE = """<!doctype html>
           width: min(360px, 90%); }
   #gate input { background: #161d2c; color: #e8ecf4; border: 1px solid #2a3550;
                 border-radius: 10px; padding: 12px; font: inherit; }
+  #chips { display: flex; gap: 6px; padding: 8px 12px 0; overflow-x: auto; }
+  .chip { background: #1b2334; color: #9fb6dd; border: 1px solid #2a3550;
+          border-radius: 999px; padding: 6px 12px; font-size: 13px;
+          cursor: pointer; white-space: nowrap; }
+  .chip:hover { background: #233046; color: #e8ecf4; }
 </style>
 </head>
 <body>
@@ -346,8 +351,17 @@ _WEB_PAGE = """<!doctype html>
   <button onclick="enter()">Entrer</button>
 </div>
 <div id="log" hidden></div>
+<div id="chips" hidden>
+  <button class="chip" data-cmd="/status" title="Rapport homelab complet">📊 Status</button>
+  <button class="chip" data-cmd="/dns" title="Sonde des résolveurs DNS">🌐 DNS</button>
+  <button class="chip" data-cmd="/ping" title="Diagnostic du chemin LLM">🏓 Ping</button>
+  <button class="chip" data-cmd="/seeds" title="Top seeding qBittorrent">🌱 Seeds</button>
+  <button class="chip" data-cmd="/backups" title="Derniers backups vzdump">💾 Backups</button>
+  <button class="chip" data-cmd="/monitoring" title="Checks Healthchecks">🩺 Monitoring</button>
+  <button class="chip" data-cmd="/model" title="Fiche technique du modèle">🧠 Model</button>
+</div>
 <form id="f" hidden>
-  <textarea id="t" placeholder="Demande-moi quelque chose…"></textarea>
+  <textarea id="t" placeholder="Demande-moi quelque chose… (ou clique un raccourci)"></textarea>
   <button id="send">Envoyer</button>
 </form>
 <script>
@@ -357,7 +371,8 @@ let token = sessionStorage.vektorToken || '';
 function show() {
   const gate = $('gate');
   if (gate) gate.remove();
-  $('log').hidden = false; $('f').hidden = false; $('t').focus();
+  $('log').hidden = false; $('chips').hidden = false; $('f').hidden = false;
+  $('t').focus();
 }
 
 function enter() {
@@ -413,6 +428,12 @@ $('f').addEventListener('submit', e => {
   ask(text);
 });
 
+// Raccourcis : envoient la commande telle quelle (réponse directe côté
+// serveur, sans inférence LLM).
+document.querySelectorAll('.chip').forEach(button => {
+  button.addEventListener('click', () => ask(button.dataset.cmd));
+});
+
 if (token) show();
 </script>
 </body>
@@ -429,10 +450,30 @@ class WebChatRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 
+# Commandes directes du canal web (mêmes rapports que les commandes
+# Telegram, sans inférence) : appel paresseux -> monkeypatchable en test.
+_WEB_COMMANDS: dict[str, object] = {
+    "/status": lambda: full_status_report(),
+    "/dns": lambda: watch_mod.dns_report(),
+    "/ping": lambda: ping_report(),
+    "/seeds": lambda: seeds_report(),
+    "/backups": lambda: watch_mod.backups_report(),
+    "/monitoring": lambda: watch_mod.monitoring_report(),
+    "/model": lambda: model_card(),
+}
+
+
 @app.post("/api/web/chat", response_model=ChatResponse)
 async def web_chat(request: WebChatRequest, x_vektor_token: str | None = Header(default=None)):
-    """Chat depuis la page /web : user_id fixe 'web-local', même agent que Telegram."""
+    """Chat depuis la page /web : user_id fixe 'web-local', même agent que Telegram.
+
+    Une commande (« /dns »...) renvoie le rapport direct — pas de LLM,
+    pas de mémoire : même contrat que les commandes Telegram."""
     require_token(x_vektor_token)
+    first_word = request.text.strip().split()[0].lower() if request.text.strip() else ""
+    command = _WEB_COMMANDS.get(first_word)
+    if command is not None:
+        return ChatResponse(response=await command(), conversation_id="commande")
     conversation_id = await memory.ensure_conversation(None, "web-local", "web")
     await memory.add_message(conversation_id, "user", request.text)
     history = await memory.history(conversation_id)

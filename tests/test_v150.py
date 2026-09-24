@@ -93,3 +93,56 @@ async def test_canal_web_expose_page_et_chat(monkeypatch):
         "/api/web/chat", json={"text": "salut"}, headers={"X-Vektor-Token": "mauvais"}
     )
     assert refus.status_code == 401
+
+
+async def test_canal_web_commandes_directes(monkeypatch):
+    """« /dns » et les autres raccourcis renvoient le rapport direct (pas de
+    LLM, pas de mémoire) — même contrat que les commandes Telegram."""
+    from fastapi.testclient import TestClient
+
+    from app import main as app_main
+
+    called = []
+
+    async def fake_dns():
+        called.append("dns")
+        return "🟢 rapport dns de test"
+
+    async def fail_agent(*a, **k):
+        raise AssertionError("une commande ne doit pas passer par le LLM")
+
+    monkeypatch.setitem(app_main._WEB_COMMANDS, "/dns", fake_dns)
+    monkeypatch.setattr(app_main, "run_agent", fail_agent)
+
+    client = TestClient(app_main.app)
+    r = client.post(
+        "/api/web/chat",
+        json={"text": "/dns"},
+        headers={"X-Vektor-Token": "test-token"},
+    )
+    assert r.status_code == 200
+    assert "rapport dns de test" in r.json()["response"]
+    assert called == ["dns"]
+
+    # commande inconnue en slash : bascule en chat LLM normal (pas de crash)
+    class FakeMemory2:
+        async def ensure_conversation(self, *a, **k):
+            return 7
+
+        async def add_message(self, *a, **k):
+            pass
+
+        async def history(self, *a, **k):
+            return []
+
+    async def fake_agent2(memory, text, history, user_key="default"):
+        return "chat normal"
+
+    monkeypatch.setattr(app_main, "memory", FakeMemory2())
+    monkeypatch.setattr(app_main, "run_agent", fake_agent2)
+    r2 = client.post(
+        "/api/web/chat",
+        json={"text": "/cmd-inexistante"},
+        headers={"X-Vektor-Token": "test-token"},
+    )
+    assert r2.status_code == 200 and r2.json()["response"] == "chat normal"
