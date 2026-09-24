@@ -36,6 +36,12 @@ DNS_PROBES = os.environ.get(
     "VEKTOR_DNS_PROBES", "example.com"
 ).split(",")
 
+# Sonde des noms INTERNES (optionnel) : un nom du mesh/réseau local que seuls
+# les résolveurs configurés pour le servir peuvent résoudre (ex. un hôte du
+# VPN). Une valeur vide désactive la section ; la valeur réelle vit dans le
+# .env de production, jamais dans le dépôt.
+DNS_INTERNAL_PROBE = os.environ.get("VEKTOR_DNS_INTERNAL_PROBE", "").strip()
+
 # Résolveurs à sonder, fournis via VEKTOR_DNS_RESOLVERS au format
 # `nom=url`. Le schéma de l'URL choisit le transport :
 #   udp://192.0.2.10:53            -> DNS wire UDP (résolveurs du LAN)
@@ -197,6 +203,35 @@ async def dns_report() -> str:
                 lines.append(f"{icon} {name}{cible} : {probe} → {detail}")
             except (httpx.HTTPError, ValueError, OSError) as exc:
                 lines.append(f"🔴 {name} : injoignable ({exc.__class__.__name__})")
+    if DNS_INTERNAL_PROBE:
+        lines.append(f"\n🏠 **Noms internes** — sonde `{DNS_INTERNAL_PROBE}`")
+        for name, url in sorted(DNS_RESOLVERS.items()):
+            if not url.startswith("udp://"):
+                continue  # noms internes : seuls les résolveurs du LAN sont pertinents
+            host, port = url[6:].rsplit(":", 1)
+            try:
+                message = await asyncio.to_thread(
+                    _udp_wire_query, host, int(port), _encode_wire_query(DNS_INTERNAL_PROBE)
+                )
+                rcode, ips = _parse_wire_response(message)
+            except (httpx.HTTPError, ValueError, OSError) as exc:
+                lines.append(
+                    f"🔴 {name} ({url[6:]}) : {DNS_INTERNAL_PROBE} → "
+                    f"injoignable ({exc.__class__.__name__})"
+                )
+                continue
+            cible = url[6:]
+            if rcode == 0 and ips:
+                lines.append(f"🟢 {name} ({cible}) : {DNS_INTERNAL_PROBE} → {', '.join(ips[:2])}")
+            elif rcode == 3:
+                lines.append(f"🟡 {name} ({cible}) : {DNS_INTERNAL_PROBE} → NXDOMAIN (non résolu)")
+            else:
+                lines.append(f"🟡 {name} ({cible}) : {DNS_INTERNAL_PROBE} → RCODE {rcode}")
+        lines.append(
+            "_NXDOMAIN sur un récursif public = normal (noms internes non servis) ; "
+            "NXDOMAIN persistant sur un Pi-hole configuré pour le servir = panne interne._"
+        )
+
     lines.append(
         "\n_Après la flèche : adresses renvoyées POUR la sonde "
         "(pas les IP des résolveurs). Lecture seule, aucune modification DNS._"

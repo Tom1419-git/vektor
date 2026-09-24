@@ -136,6 +136,41 @@ async def test_dns_aucun_resolveur_configure(monkeypatch):
     assert "aucun résolveur" in report
 
 
+async def test_dns_sonde_interne_resolue_nxdomain_et_injoignable(monkeypatch):
+    """Section noms internes : le nom interne est résolu par le Pi-hole qui
+    sert le mesh, NXDOMAIN (🟡) sur le récursif, 🔴 sur un résolveur mort."""
+    monkeypatch.setattr(watch, "DNS_INTERNAL_PROBE", "pve.internal.example")
+    monkeypatch.setattr(watch, "DNS_RESOLVERS", {
+        "pihole": "udp://192.0.2.53:53",
+        "recursif": "udp://192.0.2.54:5335",
+        "mort": "udp://192.0.2.55:53",
+    })
+
+    def fake_udp(host, port, packet, timeout=4.0):
+        if host == "192.0.2.53":
+            return _fake_udp_reply(packet, ip="100.64.0.1")
+        if host == "192.0.2.54":
+            return _fake_udp_reply(packet, rcode=3)
+        raise OSError("down")
+
+    monkeypatch.setattr(watch, "_udp_wire_query", fake_udp)
+    report = await watch.dns_report()
+    assert "🏠 **Noms internes**" in report and "pve.internal.example" in report
+    assert "🟢 pihole" in report and "100.64.0.1" in report
+    assert "🟡 recursif" in report and "NXDOMAIN" in report
+    assert "🔴 mort" in report and "injoignable" in report
+    # la légende distingue le NXDOMAIN normal du récursif d'une vraie panne
+    assert "récursif public" in report
+
+
+async def test_dns_sonde_interne_absente_si_non_configuree(monkeypatch):
+    monkeypatch.setattr(watch, "DNS_INTERNAL_PROBE", "")
+    monkeypatch.setattr(watch, "DNS_RESOLVERS", {"pihole": "udp://192.0.2.53:53"})
+    monkeypatch.setattr(watch, "_udp_wire_query", lambda *a, **k: _fake_udp_reply(a[2]))
+    report = await watch.dns_report()
+    assert "Noms internes" not in report
+
+
 def test_parse_wire_extrait_rcode_et_ips():
     packet = watch._encode_wire_query("example.com")
     rcode, ips = watch._parse_wire_response(_fake_udp_reply(packet, ip="192.0.2.7"))
