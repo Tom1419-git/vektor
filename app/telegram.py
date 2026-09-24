@@ -1,4 +1,7 @@
+import asyncio
+import logging
 import os
+
 import httpx
 from telegram import Update, BotCommand
 from telegram.constants import ChatAction
@@ -33,6 +36,81 @@ RELOAD_URL = os.environ.get("VEKTOR_RELOAD_URL", "http://vektor-api:8000/api/rel
 FORGET_URL = os.environ.get("VEKTOR_FORGET_URL", "http://vektor-api:8000/api/forget")
 API_TOKEN = os.environ.get("VEKTOR_API_TOKEN", "")
 HEADERS = {"X-Vektor-Token": API_TOKEN}
+
+logger = logging.getLogger("vektor.telegram")
+
+# Commandes sondées au démarrage : (constante URL, endpoint, libellé Telegram)
+_COMMAND_ENDPOINTS: list[tuple[str, str, str]] = [
+    ("API_URL", "/api/chat", "chat"),
+    ("STATUS_URL", "/api/status", "/status"),
+    ("MODEL_URL", "/api/model", "/model"),
+    ("SEEDS_URL", "/api/seeds", "/seeds"),
+    ("BACKUPS_URL", "/api/backups", "/backups"),
+    ("DNS_URL", "/api/dns", "/dns"),
+    ("MONITORING_URL", "/api/monitoring", "/monitoring"),
+    ("PING_URL", "/api/ping", "/ping"),
+    ("RELOAD_URL", "/api/reload-doc", "/reload"),
+    ("FORGET_URL", "/api/forget", "/forget"),
+]
+
+
+async def autotest_endpoints(transport: httpx.AsyncBaseTransport | None = None) -> list[str]:
+    """Auto-test au démarrage : chaque URL de commande doit toucher l'API.
+
+    Deux phases, sans effet de bord :
+    1. GET sans token sur chaque endpoint - 401 (auth requise) et 405
+       (méthode) prouvent que le chemin existe ; 404 ou erreur de connexion
+       = commande muette en prod (bug v1.3.6 : défauts 127.0.0.1).
+       require_token est appelé AVANT tout traitement : aucune sonde,
+       aucun LLM, aucune écriture ne s'exécute.
+    2. GET /api/dns AVEC token (endpoint le plus léger, lecture seule) -
+       vérifie le token réel : un token faux rendrait TOUTES les
+       commandes muettes sans erreur visible.
+
+    L'API et le bot démarrent en parallèle : en cas d'échec, la sonde est
+    reprise (jusqu'à 4 essais, dernière attente de 8 s). Une panne n'est
+    signalée que si elle persiste - pas la petite course de démarrage.
+    """
+    problems: list[str] = []
+    retries = 4 if transport is None else 1
+    for attempt in range(1, retries + 1):
+        problems = []
+        async with httpx.AsyncClient(timeout=5, transport=transport) as client:
+            for attr, _endpoint, what in _COMMAND_ENDPOINTS:
+                url = globals()[attr]
+                try:
+                    response = await client.get(url)
+                except httpx.HTTPError as exc:
+                    problems.append(
+                        f"{what} : API injoignable sur {url} ({exc.__class__.__name__})"
+                    )
+                    continue
+                if response.status_code == 404:
+                    problems.append(
+                        f"{what} : {url} renvoie 404 - endpoint inexistant (commande muette)"
+                    )
+                elif response.status_code not in (200, 401, 405):
+                    problems.append(
+                        f"{what} : {url} renvoie HTTP {response.status_code} (attendu 200/401/405)"
+                    )
+        async with httpx.AsyncClient(timeout=10, headers=HEADERS, transport=transport) as client:
+            try:
+                response = await client.get(DNS_URL)
+            except httpx.HTTPError as exc:
+                problems.append(f"sonde token : /api/dns injoignable ({exc.__class__.__name__})")
+            else:
+                if response.status_code == 401:
+                    problems.append(
+                        "sonde token : VEKTOR_API_TOKEN refusé par l'API (401 sur /api/dns) - "
+                        "toutes les commandes seraient muettes"
+                    )
+                elif response.status_code != 200:
+                    problems.append(f"sonde token : /api/dns renvoie HTTP {response.status_code}")
+        if not problems:
+            break
+        if attempt < retries and transport is None:
+            await asyncio.sleep(2.0 * attempt)
+    return problems
 
 
 def is_allowed(update: Update) -> bool:
@@ -265,8 +343,42 @@ async def post_init(application: Application) -> None:
         ]
     )
 
+    # Auto-test : un défaut d'URL ne doit plus rester invisible (v1.3.6).
+    problems = await autotest_endpoints()
+    if problems:
+        detail = "\n".join(f"  - {p}" for p in problems)
+        logger.error(
+            "AUTO-TEST démarrage : %d problème(s) — commande(s) muette(s) en prod !\n%s",
+            len(problems),
+            detail,
+        )
+        alert = "🚨 Vektor — auto-test démarrage : commandes muettes !\n" + "\n".join(
+            f"• {p}" for p in problems
+        )
+        chat_id = next(iter(ALLOWED), None)
+        if chat_id is not None:
+            try:
+                await application.bot.send_message(chat_id=chat_id, text=alert)
+            except Exception:
+                logger.exception("Notification auto-test impossible")
+    else:
+        total = len(_COMMAND_ENDPOINTS)
+        logger.info(
+            "AUTO-TEST démarrage : %d/%d commandes -> API OK (token vérifié via sonde DNS)",
+            total,
+            total,
+        )
+
 
 if __name__ == "__main__":
+    # Logging visible dans docker logs : l'auto-test de démarrage doit laisser
+    # une trace lisible (INFO), sans le bruit des librairies (polling HTTP).
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("telegram").setLevel(logging.WARNING)
     if not TOKEN or not ALLOWED:
         raise SystemExit("Telegram désactivé : token ou whitelist manquant.")
     application = Application.builder().token(TOKEN).post_init(post_init).build()

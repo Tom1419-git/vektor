@@ -38,7 +38,7 @@ DNS_PROBES = os.environ.get(
 
 # Résolveurs à sonder, fournis via VEKTOR_DNS_RESOLVERS au format
 # `nom=url`. Le schéma de l'URL choisit le transport :
-#   udp://192.168.1.62:53          -> DNS wire UDP (résolveurs du LAN)
+#   udp://192.0.2.10:53            -> DNS wire UDP (résolveurs du LAN)
 #   https://…/dns-query?{dns}      -> DoH wire RFC 8484 (template {dns})
 #   https://…/dns-query            -> DoH JSON (Pi-hole v6 exposé, Cloudflare)
 DNS_RESOLVERS: dict[str, str] = {}
