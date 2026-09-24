@@ -107,6 +107,10 @@ async def test_dns_sonde_udp_wire_et_json(monkeypatch):
     assert sent["target"] == "192.0.2.53:53"
     assert "🟢 pihole" in report and "93.184.216.34" in report
     assert "🟢 cloud" in report
+    # l'adresse du résolveur sondé doit être visible (sinon on confond les
+    # IP de la réponse avec celles du résolveur)
+    assert "192.0.2.53:53" in report
+    assert "→" in report
 
 
 async def test_dns_doh_wire_parse_le_rcode(monkeypatch):
