@@ -315,9 +315,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "text": update.message.text,
     }
     try:
-        # 240 s : une réponse avec outil fait passer deux inférences LLM
-        # (décision d'appel puis rédaction) — sur CPU, ça peut dépasser 2 min.
-        async with httpx.AsyncClient(timeout=240) as client:
+        # 360 s : une réponse multi-tâches peut enchaîner plusieurs tours
+        # d'outils (v1.4.0), soit 3+ inférences LLM sur CPU.
+        async with httpx.AsyncClient(timeout=360) as client:
             response = await client.post(API_URL, json=payload, headers=HEADERS)
     except httpx.HTTPError:
         await update.message.reply_text("Je n'arrive pas à joindre mon cerveau (API). Réessaie dans un instant.")
