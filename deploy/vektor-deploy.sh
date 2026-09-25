@@ -116,8 +116,8 @@ chmod 600 "$release_dir/.env"
 
 # ── 4. Basculer et rebuild ──────────────────────────────────────────────
 log "rebuild + recreate des conteneurs depuis $release_dir"
-if ! (cd "$release_dir" && docker compose -f "$COMPOSE_FILE" build --pull \
-      && docker compose -f "$COMPOSE_FILE" --profile telegram up -d); then
+if ! (cd "$release_dir" && docker compose -p vektor -f "$COMPOSE_FILE" build --pull \
+      && docker compose -p vektor -f "$COMPOSE_FILE" --profile telegram up -d); then
   log "ÉCHEC du build/up — ancienne version laissée en place"
   exit 1
 fi
@@ -133,13 +133,16 @@ for _ in $(seq 1 $((HEALTH_TIMEOUT / 5))); do
 done
 
 if [[ $healthy -eq 1 ]]; then
+  # Pointeur de version courante : c'est lui qui empêche le re-déploiement
+  # du même tag à chaque tour du watcher. SANS lui, le watcher reboucle.
+  echo "$tag" > "$DEPLOY_DIR/version"
   log "✅ $tag déployé et healthy"
   # Conteneurs orphelins d'anciennes versions : nettoyage best-effort
-  (cd "$release_dir" && docker compose -f "$COMPOSE_FILE" up -d --remove-orphans) >/dev/null 2>&1 || true
+  (cd "$release_dir" && docker compose -p vektor -f "$COMPOSE_FILE" up -d --remove-orphans) >/dev/null 2>&1 || true
 else
   log "🔴 health check KO après $HEALTH_TIMEOUT s — ROLLBACK automatique"
   if [[ -n "${current:-}" && -d "$RELEASES_DIR/$current" ]]; then
-    (cd "$RELEASES_DIR/$current" && docker compose -f "$COMPOSE_FILE" --profile telegram up -d) \
+    (cd "$RELEASES_DIR/$current" && docker compose -p vektor -f "$COMPOSE_FILE" --profile telegram up -d) \
       && log "rollback vers $current effectué" \
       || log "ÉCHEC DU ROLLBACK — intervention manuelle requise (recreate depuis $RELEASES_DIR/$current)"
   else

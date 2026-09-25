@@ -44,6 +44,9 @@ services:
         condition: service_healthy
     volumes:
       - ./secrets:/app/secrets:ro
+      # Doc vivante : reload à chaud par l'API (/reload, auto-reload 30 s)
+      # sans rebuild — le répertoire est peuplé par deploy/vektor-deploy.sh.
+      - ./knowledge-live:/app/knowledge:ro
     restart: unless-stopped
     read_only: true
     tmpfs:
