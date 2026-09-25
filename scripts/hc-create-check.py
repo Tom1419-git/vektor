@@ -1,4 +1,13 @@
-import json, sqlite3, urllib.request
+"""Crée (ou récupère) le check Healthchecks « vektor-telegram ».
+
+À exécuter sur le CT Healthchecks. L'URL de base de l'API est lue depuis
+la variable d'environnement HC_BASE_URL (aucune adresse réseau codée en
+dur ici : les vraies valeurs vivent dans l'environnement, pas dans git).
+Exemple : HC_BASE_URL=http://<ip-healthchecks>:8010 python3 scripts/hc-create-check.py
+"""
+import json, os, sqlite3, urllib.request
+
+BASE_URL = os.environ.get("HC_BASE_URL", "http://127.0.0.1:8010").rstrip("/")
 
 db = sqlite3.connect("/root/healthchecks/hc.sqlite")
 rows = db.execute("SELECT api_key, owner_id FROM accounts_project ORDER BY id").fetchall()
@@ -16,7 +25,7 @@ payload = json.dumps({
     "grace": 900,
 }).encode()
 req = urllib.request.Request(
-    "http://192.168.1.61:8010/api/v1/checks/",
+    f"{BASE_URL}/api/v1/checks/",
     data=payload,
     method="POST",
     headers={"X-Api-Key": api_key, "Content-Type": "application/json"},
@@ -28,7 +37,7 @@ except urllib.error.HTTPError as exc:
     if "already exists" not in detail:
         raise SystemExit(f"ERREUR {exc.code}: {detail}")
     list_req = urllib.request.Request(
-        "http://192.168.1.61:8010/api/v1/checks/vektor-telegram",
+        f"{BASE_URL}/api/v1/checks/vektor-telegram",
         headers={"X-Api-Key": api_key},
     )
     resp = json.load(urllib.request.urlopen(list_req))
