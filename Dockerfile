@@ -10,6 +10,9 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY app ./app
 COPY knowledge ./knowledge
+# Fichier `version` écrit par deploy/vektor-deploy.sh (tag déployé) :
+# wildcard = n'échoue pas en dev local où il est absent. Lu par /ops.
+COPY version* ./
 
 RUN useradd --create-home --uid 10001 vektor && chown -R vektor:vektor /app
 USER vektor
