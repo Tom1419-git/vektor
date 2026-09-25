@@ -12,6 +12,11 @@ __pycache__/
 .venv/
 venv/
 
+# Local (jamais commité) : venv de test, fichier de message git temporaire
+.gitchk-venv/
+.git-commit-msg.tmp
+.agy-append.tmp
+
 # Docker / local
 *.log
 .DS_Store

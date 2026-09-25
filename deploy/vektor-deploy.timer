@@ -1,0 +1,13 @@
+[Unit]
+Description=Vektor deploy watcher (timer)
+
+[Timer]
+# Toutes les 5 minutes, avec récupération des tours manqués (VPS éteint).
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+RandomizedDelaySec=45
+Unit=vektor-deploy.service
+
+[Install]
+WantedBy=timers.target

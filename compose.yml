@@ -60,6 +60,7 @@ services:
       DATABASE_URL: postgresql://vektor:${POSTGRES_PASSWORD}@vektor-postgres:5432/vektor
       VEKTOR_API_URL: http://vektor-api:8000/api/chat
       VEKTOR_STATUS_URL: http://vektor-api:8000/api/status
+      VEKTOR_OPS_URL: http://vektor-api:8000/api/ops
       VEKTOR_FORGET_URL: http://vektor-api:8000/api/forget
     networks: [vektor]
     depends_on:

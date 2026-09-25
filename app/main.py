@@ -16,6 +16,7 @@ from .rag import index_knowledge
 from .graph import run_agent
 from .tools import full_status_report, infra_live_report, model_card, seeds_report
 from .ping import ping_report
+from .ops import ops_report
 from . import watch as watch_mod
 from . import alexa as alexa_mod
 
@@ -292,6 +293,14 @@ async def monitoring_endpoint(x_vektor_token: str | None = Header(default=None))
     return {"report": await watch_mod.monitoring_report()}
 
 
+@app.get("/api/ops")
+async def ops_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """Exploitation de Vektor : version déployée, conteneur, supervision.
+    Lecture seule, sans LLM — répond même si le chemin d'inférence est cassé."""
+    require_token(x_vektor_token)
+    return {"report": await ops_report()}
+
+
 @app.post("/api/forget")
 async def forget(request: ForgetRequest, x_vektor_token: str | None = Header(default=None)):
     require_token(x_vektor_token)
@@ -358,6 +367,7 @@ _WEB_PAGE = """<!doctype html>
   <button class="chip" data-cmd="/seeds" title="Top seeding qBittorrent">🌱 Seeds</button>
   <button class="chip" data-cmd="/backups" title="Derniers backups vzdump">💾 Backups</button>
   <button class="chip" data-cmd="/monitoring" title="Checks Healthchecks">🩺 Monitoring</button>
+  <button class="chip" data-cmd="/ops" title="Exploitation de Vektor (version, conteneur, supervision)">🛰️ Ops</button>
   <button class="chip" data-cmd="/model" title="Fiche technique du modèle">🧠 Model</button>
 </div>
 <form id="f" hidden>
@@ -459,6 +469,7 @@ _WEB_COMMANDS: dict[str, object] = {
     "/seeds": lambda: seeds_report(),
     "/backups": lambda: watch_mod.backups_report(),
     "/monitoring": lambda: watch_mod.monitoring_report(),
+    "/ops": lambda: ops_report(),
     "/model": lambda: model_card(),
 }
 

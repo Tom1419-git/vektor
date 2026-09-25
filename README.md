@@ -90,7 +90,8 @@ pour éviter le démarrage à froid.
   persistante (PostgreSQL), `/forget` pour tout effacer
 - **Commandes Telegram** : `/status` (rapport infra complet, sans LLM),
   `/model` (fiche technique réelle : modèle, matériel, latence moyenne),
-  `/seeds` (top torrents en seed + espace staging récupérable), `/forget`,
+  `/seeds` (top torrents en seed + espace staging récupérable), `/ops`
+  (exploitation : version déployée, conteneur, supervision), `/forget`,
   `/start`, `/help` + chat libre
 - **Supervision élargie (lecture seule)** : rapports backups (vzdump Proxmox),
   DNS (sonde multi-résolveurs UDP/DoH) et monitoring (Healthchecks.io),
@@ -177,6 +178,7 @@ La V2 ouvre le projet vers un vrai assistant, sans changer l'architecture.
 | 5 | **Périmètre outils élargi** | Backups, DNS et monitoring en lecture seule via API avec credentials dédiées aux permissions minimales — jamais d'outil shell générique | ✅ livré (`/api/backups`, `/api/dns`, `/api/monitoring`) |
 | 6 | **Canal web** | Mini client de chat servi par l'API (`/web`), token en sessionStorage, même agent que Telegram | ✅ livré (v1.5.0) |
 | 7 | **Auto-supervision & multi-endpoint LLM** | Heartbeat Healthchecks du bot (down = bot mort), auto-test horaire des commandes avec alerte, réindexation auto de la doc, endpoint LLM de secours (machine locale via VPN, détecté au vol) | ✅ livré (v1.5.0) |
+| 8 | **Exploitation & déploiement continu** | Commande `/ops` (version déployée, conteneur, supervision — lecture seule, sans LLM) + watcher de déploiement pull-based sur le VPS : tire les tags CI-verte depuis GitHub en HTTPS sortant, zéro secret chez GitHub, rollback auto si health check KO | ✅ livré (v1.5.3) |
 
 La règle transversale reste la même pour toute la V2 : le LLM peut demander,
 jamais exécuter seul — toute action d'écriture passe toujours par la whitelist

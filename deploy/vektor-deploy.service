@@ -1,0 +1,19 @@
+[Unit]
+Description=Vektor deploy watcher (pull GitHub -> VPS, CI-gated)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vektor-deploy
+# Le script ne doit jamais être lancé deux fois en parallèle (lock interne)
+Nice=10
+# Sortie visible dans journalctl -u vektor-deploy
+StandardOutput=journal
+StandardError=journal
+# Un échec (CI pas verte, build KO) ne doit pas alerter inutilement :
+# c'est un refus de déployer, pas une panne du VPS.
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target
