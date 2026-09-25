@@ -59,6 +59,26 @@ async def _knowledge_watcher(interval: int = 30) -> None:
 _watcher_task: asyncio.Task | None = None
 
 
+async def _heartbeat_loop(interval: int = 300) -> None:
+    """Ping le check Healthchecks de l'API toutes les 5 min (symétrique du bot).
+
+    Si l'API meurt, le check passe down en ~5-10 min (interval + grace) —
+    l'auto-test horaire du bot ne le voit qu'au prochain tour (1 h max).
+    URL via VEKTOR_HC_API_PING_URL, vide = désactivé."""
+    import httpx
+    import os
+    ping_url = os.environ.get("VEKTOR_HC_API_PING_URL", "").strip()
+    if not ping_url:
+        return
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(ping_url)
+        except Exception:
+            logger.warning("heartbeat API Healthchecks impossible")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _knowledge_sig
@@ -66,7 +86,9 @@ async def lifespan(app: FastAPI):
     _knowledge_sig = _knowledge_fingerprint()
     await index_knowledge(memory)
     _watcher_task = asyncio.create_task(_knowledge_watcher())
+    heartbeat_task = asyncio.create_task(_heartbeat_loop())
     yield
+    heartbeat_task.cancel()
     if _watcher_task:
         _watcher_task.cancel()
     await memory.close()

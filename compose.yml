@@ -34,6 +34,8 @@ services:
       network: host
     container_name: vektor-api
     env_file: .env
+    # Les env du bot (VEKTOR_HC_*) ne passent PAS par compose : l'API lit
+    # VEKTOR_HC_API_PING_URL directement dans le .env (env_file ci-dessus).
     environment:
       DATABASE_URL: postgresql://vektor:${POSTGRES_PASSWORD}@vektor-postgres:5432/vektor
       OLLAMA_BASE_URL: http://172.20.0.1:11434
