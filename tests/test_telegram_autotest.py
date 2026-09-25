@@ -19,7 +19,7 @@ import app.telegram as tg  # noqa: E402
 
 KNOWN_ENDPOINTS = {
     "/api/chat", "/api/status", "/api/model", "/api/seeds", "/api/backups",
-    "/api/dns", "/api/monitoring", "/api/ping", "/api/reload-doc", "/api/forget",
+    "/api/dns", "/api/monitoring", "/api/ops", "/api/ping", "/api/reload-doc", "/api/forget",
 }
 
 

@@ -31,6 +31,7 @@ SEEDS_URL = os.environ.get("VEKTOR_SEEDS_URL", "http://vektor-api:8000/api/seeds
 BACKUPS_URL = os.environ.get("VEKTOR_BACKUPS_URL", "http://vektor-api:8000/api/backups")
 DNS_URL = os.environ.get("VEKTOR_DNS_URL", "http://vektor-api:8000/api/dns")
 MONITORING_URL = os.environ.get("VEKTOR_MONITORING_URL", "http://vektor-api:8000/api/monitoring")
+OPS_URL = os.environ.get("VEKTOR_OPS_URL", "http://vektor-api:8000/api/ops")
 PING_URL = os.environ.get("VEKTOR_PING_URL", "http://vektor-api:8000/api/ping")
 RELOAD_URL = os.environ.get("VEKTOR_RELOAD_URL", "http://vektor-api:8000/api/reload-doc")
 FORGET_URL = os.environ.get("VEKTOR_FORGET_URL", "http://vektor-api:8000/api/forget")
@@ -52,6 +53,7 @@ _COMMAND_ENDPOINTS: list[tuple[str, str, str]] = [
     ("BACKUPS_URL", "/api/backups", "/backups"),
     ("DNS_URL", "/api/dns", "/dns"),
     ("MONITORING_URL", "/api/monitoring", "/monitoring"),
+    ("OPS_URL", "/api/ops", "/ops"),
     ("PING_URL", "/api/ping", "/ping"),
     ("RELOAD_URL", "/api/reload-doc", "/reload"),
     ("FORGET_URL", "/api/forget", "/forget"),
@@ -141,6 +143,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/backups : derniers backups vzdump (âge, taille)\n"
             "/dns : sonde des résolveurs DNS\n"
             "/monitoring : état des checks de monitoring\n"
+            "/ops : exploitation de Vektor (version, conteneur, supervision)\n"
             "/ping : diagnostic du chemin LLM (bridge, modèle, inférence)\n"
             "/reload : réindexer la documentation (après modification)\n"
             "/help : cette aide\n"
@@ -270,6 +273,22 @@ async def monitoring_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_long(update.message, response.json()["report"])
 
 
+async def ops_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exploitation de Vektor : version déployée, conteneur, supervision — sans LLM."""
+    if not is_allowed(update) or not update.message:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(OPS_URL, headers=HEADERS)
+    except httpx.HTTPError:
+        await update.message.reply_text("Impossible de lire le rapport d'exploitation (API).")
+        return
+    if response.status_code != 200:
+        await update.message.reply_text("Le rapport d'exploitation est indisponible (API).")
+        return
+    await send_long(update.message, response.json()["report"])
+
+
 async def reload_doc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Réindexe knowledge-live sans redémarrage (après édition de la doc)."""
     if not is_allowed(update) or not update.message:
@@ -343,6 +362,7 @@ async def post_init(application: Application) -> None:
             BotCommand("backups", "Derniers backups vzdump (âge, taille)"),
             BotCommand("dns", "Sonde des résolveurs DNS"),
             BotCommand("monitoring", "État des checks de monitoring"),
+            BotCommand("ops", "Exploitation de Vektor (version, supervision)"),
             BotCommand("forget", "Effacer la mémoire des conversations"),
         ]
     )
@@ -454,6 +474,7 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("backups", backups_cmd))
     application.add_handler(CommandHandler("dns", dns_cmd))
     application.add_handler(CommandHandler("monitoring", monitoring_cmd))
+    application.add_handler(CommandHandler("ops", ops_cmd))
     application.add_handler(CommandHandler("ping", ping_cmd))
     application.add_handler(CommandHandler("reload", reload_doc))
     application.add_handler(CommandHandler("forget", forget))
