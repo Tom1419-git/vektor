@@ -126,6 +126,7 @@ def rank_chunks(
     for source, content, terms in chunks:
         first_line = content.split("\n", 1)[0].lower()
         score = 0.0
+        title_hits = 0
         for term in query_terms:
             if term not in terms:
                 continue
@@ -133,6 +134,12 @@ def rank_chunks(
             score += weight
             if term in first_line:  # le terme est dans le titre de section
                 score += weight * 0.5
+                title_hits += 1
+        # Bonus « bon chunk » : la section porte le nom du service demandé
+        # (ex. « Healthchecks » dans le titre d'une question sur le port HC)
+        # — évite qu'un chunk voisin mentionnant le terme en passant gagne.
+        if title_hits >= 2:
+            score += 0.25 * score
         if score > 0:
             ranked.append((score, {"source": source, "content": content}))
     ranked.sort(key=lambda item: item[0], reverse=True)
