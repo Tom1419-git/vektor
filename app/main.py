@@ -123,6 +123,25 @@ async def health():
     return {"status": "ok", "service": "vektor"}
 
 
+@app.post("/api/webhook/grafana")
+async def grafana_webhook_endpoint(request: Request):
+    """Alertes Grafana -> auto-réparation sûre (selfheal).
+
+    Sécurité : ni token (Grafana n'en a pas), ni auth IP — l'endpoint est
+    atteignable uniquement depuis le réseau Docker interne (pas de port
+    publié) et N'EXÉCUTE que des actions de la whitelist selfheal, avec
+    cooldown anti-tempête. Un payload forgé ne peut donc rien déclencher
+    au-delà d'un fstrim inoffensif."""
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="payload JSON invalide")
+    from .selfheal import handle_grafana_webhook
+
+    summary = await handle_grafana_webhook(payload)
+    return {"acted": summary["acted"], "skipped_count": len(summary["skipped"])}
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, x_vektor_token: str | None = Header(default=None)):
     require_token(x_vektor_token)
@@ -291,6 +310,21 @@ async def qb_proposal_endpoint(
     return {"proposal": proposal}
 
 
+@app.post("/api/qb/{verb}/cancel")
+async def qb_cancel_endpoint(
+    verb: str,
+    x_vektor_token: str | None = Header(default=None),
+    user_id: str = "default",
+    channel: str = "telegram",
+):
+    """Annule la proposition en attente (bouton ❌ du bot)."""
+    require_token(x_vektor_token)
+    from . import actions
+
+    actions._PENDING.pop(f"{channel}:{user_id}", None)
+    return {"result": "annulée"}
+
+
 @app.post("/api/qb/{verb}")
 async def qb_action_endpoint(
     verb: str,
@@ -377,6 +411,15 @@ async def monitoring_endpoint(x_vektor_token: str | None = Header(default=None))
     """État des checks Healthchecks.io (token lecture dédié). Lecture seule."""
     require_token(x_vektor_token)
     return {"report": await watch_mod.monitoring_report()}
+
+
+@app.get("/api/morning")
+async def morning_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """Rapport matinal narratif (chiffres live, sans LLM)."""
+    require_token(x_vektor_token)
+    from .morning import morning_report
+
+    return {"report": await morning_report()}
 
 
 @app.get("/api/ops")

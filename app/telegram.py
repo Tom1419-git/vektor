@@ -3,10 +3,11 @@ import logging
 import os
 
 import httpx
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatAction
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -34,6 +35,7 @@ BACKUPS_URL = os.environ.get("VEKTOR_BACKUPS_URL", "http://vektor-api:8000/api/b
 DNS_URL = os.environ.get("VEKTOR_DNS_URL", "http://vektor-api:8000/api/dns")
 MONITORING_URL = os.environ.get("VEKTOR_MONITORING_URL", "http://vektor-api:8000/api/monitoring")
 OPS_URL = os.environ.get("VEKTOR_OPS_URL", "http://vektor-api:8000/api/ops")
+MORNING_URL = os.environ.get("VEKTOR_MORNING_URL", "http://vektor-api:8000/api/morning")
 PING_URL = os.environ.get("VEKTOR_PING_URL", "http://vektor-api:8000/api/ping")
 RELOAD_URL = os.environ.get("VEKTOR_RELOAD_URL", "http://vektor-api:8000/api/reload-doc")
 FORGET_URL = os.environ.get("VEKTOR_FORGET_URL", "http://vektor-api:8000/api/forget")
@@ -57,6 +59,7 @@ _COMMAND_ENDPOINTS: list[tuple[str, str, str]] = [
     ("DNS_URL", "/api/dns", "/dns"),
     ("MONITORING_URL", "/api/monitoring", "/monitoring"),
     ("OPS_URL", "/api/ops", "/ops"),
+    ("MORNING_URL", "/api/morning", "/matin"),
     ("PING_URL", "/api/ping", "/ping"),
     ("RELOAD_URL", "/api/reload-doc", "/reload"),
     ("FORGET_URL", "/api/forget", "/forget"),
@@ -308,7 +311,93 @@ async def _qb_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE, verb: str)
     if response.status_code != 200:
         await update.message.reply_text("Impossible de préparer l'action (API).")
         return
-    await update.message.reply_text(response.json()["proposal"])
+    await update.message.reply_text(
+        response.json()["proposal"],
+        reply_markup=InlineKeyboardMarkup(
+            [[
+                InlineKeyboardButton("✅ Confirmer", callback_data=f"qb:{verb}:yes"),
+                InlineKeyboardButton("❌ Annuler", callback_data=f"qb:{verb}:no"),
+            ]]
+        ),
+    )
+
+
+async def qb_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Boutons inline /pause /resume : Confirmer poste le OUI au chemin
+    normal du chat (registre partagé) ; Annuler purge la proposition."""
+    query = update.callback_query
+    if query is None or not is_allowed(update):
+        return
+    await query.answer()
+    user_id = str(update.effective_user.id)
+    try:
+        _ns, verb, decision = query.data.split(":")
+    except ValueError:
+        return
+    if decision == "no":
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                await client.post(
+                    f"{QB_URL.rsplit('/', 1)[0]}/{verb}/cancel",
+                    params={"user_id": user_id, "channel": "telegram"},
+                    headers=HEADERS,
+                )
+        except httpx.HTTPError:
+            pass
+        await query.edit_message_text("❌ Action annulée.")
+        return
+    # Confirmer : on poste « OUI » au chemin chat normal (registre partagé)
+    try:
+        async with httpx.AsyncClient(timeout=360) as client:
+            response = await client.post(
+                API_URL,
+                json={"user_id": user_id, "channel": "telegram", "text": "OUI"},
+                headers=HEADERS,
+            )
+    except httpx.HTTPError:
+        await query.edit_message_text("API injoignable — action non exécutée.")
+        return
+    if response.status_code == 200:
+        text = response.json()["response"]
+        await query.edit_message_text(f"✅ Confirmé par bouton.\n\n{text[:3500]}")
+    else:
+        await query.edit_message_text("Confirmation refusée par l'API (expired ?).")
+
+
+async def matin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Rapport matinal narratif à la demande (aussi poussé à 07:55)."""
+    if not is_allowed(update) or not update.message:
+        return
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get(MORNING_URL, headers=HEADERS)
+    except httpx.HTTPError:
+        await update.message.reply_text("Rapport matinal indisponible (API).")
+        return
+    if response.status_code != 200:
+        await update.message.reply_text("Rapport matinal indisponible (API).")
+        return
+    await send_long(update.message, response.json()["report"])
+
+
+async def morning_push(context: ContextTypes.DEFAULT_TYPE):
+    """Job horaire : pousse le rapport matinal à 07:55 (lun-dim)."""
+    import datetime
+
+    if datetime.datetime.now().hour != 7 or datetime.datetime.now().minute > 10:
+        return
+    if not ALLOWED:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get(MORNING_URL, headers=HEADERS)
+        if response.status_code == 200:
+            await context.bot.send_message(
+                chat_id=next(iter(ALLOWED)), text=response.json()["report"]
+            )
+    except httpx.HTTPError:
+        return
 
 
 async def ops_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -515,6 +604,9 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("dns", dns_cmd))
     application.add_handler(CommandHandler("monitoring", monitoring_cmd))
     application.add_handler(CommandHandler("ops", ops_cmd))
+    application.add_handler(CommandHandler("matin", matin_cmd))
+    application.add_handler(CallbackQueryHandler(qb_callback, pattern="^qb:"))
+    application.job_queue.run_repeating(morning_push, interval=600, first=10)
     application.add_handler(CommandHandler("pause", pause_cmd))
     application.add_handler(CommandHandler("resume", resume_cmd))
     application.add_handler(CommandHandler("ping", ping_cmd))
