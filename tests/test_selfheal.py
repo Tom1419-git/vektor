@@ -45,7 +45,7 @@ async def test_webhook_warning_ne_declenche_rien(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_webhook_critical_declenche_une_fois_puis_cooldown(monkeypatch):
+async def test_webhook_critical_execute_quand_hors_cooldown(monkeypatch):
     executed = []
 
     async def fake_execute(action):
@@ -54,8 +54,7 @@ async def test_webhook_critical_declenche_une_fois_puis_cooldown(monkeypatch):
 
     monkeypatch.setattr(selfheal.actions, "_execute", fake_execute)
     monkeypatch.setattr(selfheal, "_tg", _noop_tg)
-    # Isolation totale : dict frais quelle que soit l'ordre d'exécution
-    # des tests (le state module-level est partagé).
+    # Cooldown vide => action autorisée (isolation totale du state module)
     monkeypatch.setattr(selfheal, "_LAST_RUN", {})
     payload = {
         "alerts": [{
@@ -68,11 +67,31 @@ async def test_webhook_critical_declenche_une_fois_puis_cooldown(monkeypatch):
     assert executed == ["pve_fstrim"]
     assert "pve_fstrim" in summary["acted"][0]
     assert selfheal._LAST_RUN["pve_fstrim"] > 0
-    # 2e passage immédiat : cooldown -> rien
-    summary2 = await selfheal.handle_grafana_webhook(payload)
-    assert executed == ["pve_fstrim"]
-    assert summary2["acted"] == []
-    assert any("cooldown" in s for s in summary2["skipped"])
+
+
+@pytest.mark.asyncio
+async def test_webhook_critical_bloque_pendant_cooldown(monkeypatch):
+    """Un 2e webhook rapproché ne ré-exécute PAS (anti-tempête)."""
+
+    async def fail_execute(action):
+        raise AssertionError("le cooldown doit bloquer l'exécution")
+
+    monkeypatch.setattr(selfheal.actions, "_execute", fail_execute)
+    monkeypatch.setattr(selfheal, "_tg", _noop_tg)
+    # Cooldown déjà actif (tout juste exécuté)
+    monkeypatch.setattr(
+        selfheal, "_LAST_RUN", {"pve_fstrim": __import__("time").monotonic()}
+    )
+    payload = {
+        "alerts": [{
+            "title": "Thin pool LVM CRITIQUE > 92% (pve/backup-dumps)",
+            "status": "firing",
+            "labels": {"severity": "critical"},
+        }]
+    }
+    summary = await selfheal.handle_grafana_webhook(payload)
+    assert summary["acted"] == []
+    assert any("cooldown" in s for s in summary["skipped"])
 
 
 @pytest.mark.asyncio
