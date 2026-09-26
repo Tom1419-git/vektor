@@ -126,7 +126,10 @@ chmod 600 "$release_dir/.env"
 
 # ── 4. Basculer et rebuild ──────────────────────────────────────────────
 log "rebuild + recreate des conteneurs depuis $release_dir"
-if ! (cd "$release_dir" && docker compose -p vektor -f "$COMPOSE_FILE" build --pull \
+# --profile telegram sur le BUILD AUSSI : sans lui, compose ne construit
+# pas les services en profil -> image du bot figée, jamais recréer
+# (vécu en v1.5.8 : bot resté sur une vieille image silencieusement).
+if ! (cd "$release_dir" && docker compose -p vektor -f "$COMPOSE_FILE" --profile telegram build --pull \
       && docker compose -p vektor -f "$COMPOSE_FILE" --profile telegram up -d); then
   log "ÉCHEC du build/up — ancienne version laissée en place"
   exit 1
