@@ -43,6 +43,10 @@ def _match_rule(title: str) -> str | None:
     t = title.lower()
     if "thin pool lvm" in t and "92%" in t:
         return "pve_fstrim"
+    if "qbittorrent" in t and ("unhealthy" in t or "down" in t):
+        return "docker_restart_107_qbittorrent"
+    if "vektor-telegram" in t and "down" in t:
+        return "bot_recreate"
     if "backup" in t and ("échec" in t or "echec" in t or "failed" in t):
         return None  # les échecs de backup ne se réparent pas tout seuls
     return None
@@ -78,8 +82,20 @@ async def handle_grafana_webhook(payload: dict) -> dict:
             skipped.append(f"{title} (cooldown)")
             continue
         _LAST_RUN[action] = now
-        result = await actions._execute(action)
-        acted.append(f"{title} -> {action} : {result.strip()[:200]}")
+        if action == "bot_recreate":
+            # L'API ne peut pas relancer son frère (pas de socket Docker) :
+            # le watchdog local du VPS s'en charge, on ne fait que déclencher
+            # le run immédiat via systemd (best-effort, silencieux).
+            proc = await asyncio.create_subprocess_exec(
+                "systemctl", "start", "bot-watchdog.service",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+            acted.append(f"{title} -> bot-watchdog déclenché")
+        else:
+            result = await actions._execute(action)
+            acted.append(f"{title} -> {action} : {result.strip()[:200]}")
 
     summary = {
         "acted": acted,

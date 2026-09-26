@@ -119,3 +119,41 @@ async def test_webhook_charge_garbage_sans_casser():
 
 async def _noop_tg(text: str) -> None:
     return None
+
+
+def test_match_qbittorrent_unhealthy():
+    assert selfheal._match_rule("Conteneur qBittorrent unhealthy") == "docker_restart_107_qbittorrent"
+
+
+def test_match_vektor_telegram_down():
+    assert selfheal._match_rule("Healthcheck vektor-telegram down") == "bot_recreate"
+
+
+@pytest.mark.asyncio
+async def test_bot_recreate_declenche_le_watchdog_systemd(monkeypatch):
+    import app.selfheal as sh
+
+    calls = []
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(args)
+
+        class P:
+            async def wait(self):
+                return 0
+
+        return P()
+
+    monkeypatch.setattr(sh.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(sh, "_tg", _noop_tg)
+    monkeypatch.setattr(sh, "_LAST_RUN", {})
+    payload = {
+        "alerts": [{
+            "title": "Healthcheck vektor-telegram down",
+            "status": "firing",
+            "labels": {"severity": "critical"},
+        }]
+    }
+    summary = await sh.handle_grafana_webhook(payload)
+    assert calls and calls[0][1] == "start"
+    assert any("bot-watchdog" in a for a in summary["acted"])

@@ -127,11 +127,16 @@ async def health():
 async def grafana_webhook_endpoint(request: Request):
     """Alertes Grafana -> auto-réparation sûre (selfheal).
 
-    Sécurité : ni token (Grafana n'en a pas), ni auth IP — l'endpoint est
-    atteignable uniquement depuis le réseau Docker interne (pas de port
-    publié) et N'EXÉCUTE que des actions de la whitelist selfheal, avec
-    cooldown anti-tempête. Un payload forgé ne peut donc rien déclencher
-    au-delà d'un fstrim inoffensif."""
+    Sécurité : header X-Vektor-Selfheal obligatoire (secret partagé généré
+    sur le VPS, jamais commité) — l'endpoint est sinon joignable depuis
+    Internet via Caddy. L'action reste de toute façon bornée à la whitelist
+    selfheal avec cooldown anti-tempête."""
+    import os
+
+    expected = os.environ.get("VEKTOR_SELFHEAL_SECRET", "").strip()
+    provided = request.headers.get("X-Vektor-Selfheal", "")
+    if not expected or provided != expected:
+        raise HTTPException(status_code=403, detail="secret selfheal manquant ou invalide")
     try:
         payload = await request.json()
     except Exception:
