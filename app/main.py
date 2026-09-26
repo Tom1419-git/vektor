@@ -614,7 +614,7 @@ _WEB_COMMANDS: dict[str, object] = {
     "/ops": lambda: ops_report(),
     "/model": lambda: model_card(),
     "/matin": lambda: __import__("app.morning", fromlist=["morning_report"]).morning_report(),
-    "/snapls": lambda: actions._execute("lxc_snapls"),
+    "/snapls": lambda: __import__("app.actions", fromlist=["_execute"])._execute("lxc_snapls"),
     # /pause et /resume ne sont PAS des commandes directes : ils passent
     # par le chemin agent (proposition + confirmation OUI, registre partagé
     # avec Telegram). Délibéré : une écriture ne doit jamais être un simple
