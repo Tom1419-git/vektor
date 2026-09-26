@@ -49,7 +49,15 @@ ACTION_PATTERNS: list[tuple[re.Pattern, str]] = [
         re.compile(r"\b(?:scan|rerafra[îi]ch|rescan)\w*\s+(?:la\s+)?biblioth[èe]que\b", re.I),
         "sonarr_rescan",
     ),
-    # Pause / reprise globale qBittorrent
+    # Pause / reprise globale qBittorrent (commandes slash et langage naturel)
+    (
+        re.compile(r"^/(pause)\b", re.I),
+        "qb_pause_103",
+    ),
+    (
+        re.compile(r"^/(resume)\b", re.I),
+        "qb_resume_103",
+    ),
     (
         re.compile(r"\b(?:mets?|stoppe?|arr[êe]te?|pause|sus?pends?)\w*\s+(?:en\s+pause\s+)?(?:tous\s+|les\s+|des\s+|tout(?:es)?\s+)*(?:les\s+|des\s+)?t[ée]l[ée]chargements?\b", re.I),
         "qb_pause_103",

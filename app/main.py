@@ -498,6 +498,10 @@ _WEB_PAGE = """<!doctype html>
   <button class="chip" data-cmd="/monitoring" title="Checks Healthchecks">🩺 Monitoring</button>
   <button class="chip" data-cmd="/ops" title="Exploitation de Vektor (version, conteneur, supervision)">🛰️ Ops</button>
   <button class="chip" data-cmd="/model" title="Fiche technique du modèle">🧠 Model</button>
+  <button class="chip" data-cmd="/matin" title="La nuit en résumé">🌅 Matin</button>
+  <button class="chip" data-cmd="/pause" title="Pause globale des téléchargements (confirmation OUI)">⏸️ Pause</button>
+  <button class="chip" data-cmd="/resume" title="Reprise des téléchargements (confirmation OUI)">▶️ Resume</button>
+  <button class="chip" data-cmd="/snapls" title="Snapshots à expiration automatique">📸 Snaps</button>
 </div>
 <form id="f" hidden>
   <textarea id="t" placeholder="Demande-moi quelque chose… (ou clique un raccourci)"></textarea>
@@ -551,6 +555,15 @@ async function ask(text) {
     if (r.status === 401) { waiting.textContent = 'Token refusé — recharge la page.'; return; }
     const d = await r.json();
     waiting.textContent = d.response || JSON.stringify(d);
+    // Confirmation en attente ? Ajoute un bouton OUI (même registre que TG).
+    if (/OUI/.test(d.response || '') && /Confirme/.test(d.response || '')) {
+      const b = document.createElement('button');
+      b.textContent = '✅ Confirmer (OUI)';
+      b.className = 'chip';
+      b.onclick = () => { b.remove(); ask('OUI'); };
+      waiting.appendChild(document.createElement('br'));
+      waiting.appendChild(b);
+    }
   } catch (e) {
     waiting.className = 'msg err';
     waiting.textContent = 'Erreur : ' + e;
@@ -600,6 +613,12 @@ _WEB_COMMANDS: dict[str, object] = {
     "/monitoring": lambda: watch_mod.monitoring_report(),
     "/ops": lambda: ops_report(),
     "/model": lambda: model_card(),
+    "/matin": lambda: __import__("app.morning", fromlist=["morning_report"]).morning_report(),
+    "/snapls": lambda: actions._execute("lxc_snapls"),
+    # /pause et /resume ne sont PAS des commandes directes : ils passent
+    # par le chemin agent (proposition + confirmation OUI, registre partagé
+    # avec Telegram). Délibéré : une écriture ne doit jamais être un simple
+    # rapport.
 }
 
 
