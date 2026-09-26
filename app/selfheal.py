@@ -69,7 +69,12 @@ async def handle_grafana_webhook(payload: dict) -> dict:
             skipped.append(title or "?")
             continue
         now = time.monotonic()
-        if now - _LAST_RUN.get(action, 0.0) < _COOLDOWN_S:
+        # NB : default None (PAS 0.0) — sur une machine fraîchement bootée
+        # (runner CI, conteneur redémarré), monotonic() est proche de 0 et
+        # un default 0.0 ferait croire à un cooldown actif (bug attrapé
+        # par la CI le 26/09 : le runner avait ~20 s d'uptime).
+        last = _LAST_RUN.get(action)
+        if last is not None and now - last < _COOLDOWN_S:
             skipped.append(f"{title} (cooldown)")
             continue
         _LAST_RUN[action] = now
