@@ -54,7 +54,9 @@ async def test_webhook_critical_declenche_une_fois_puis_cooldown(monkeypatch):
 
     monkeypatch.setattr(selfheal.actions, "_execute", fake_execute)
     monkeypatch.setattr(selfheal, "_tg", _noop_tg)
-    selfheal._LAST_RUN.clear()
+    # Isolation totale : dict frais quelle que soit l'ordre d'exécution
+    # des tests (le state module-level est partagé).
+    monkeypatch.setattr(selfheal, "_LAST_RUN", {})
     payload = {
         "alerts": [{
             "title": "Thin pool LVM CRITIQUE > 92% (pve/backup-dumps)",
@@ -65,6 +67,7 @@ async def test_webhook_critical_declenche_une_fois_puis_cooldown(monkeypatch):
     summary = await selfheal.handle_grafana_webhook(payload)
     assert executed == ["pve_fstrim"]
     assert "pve_fstrim" in summary["acted"][0]
+    assert selfheal._LAST_RUN["pve_fstrim"] > 0
     # 2e passage immédiat : cooldown -> rien
     summary2 = await selfheal.handle_grafana_webhook(payload)
     assert executed == ["pve_fstrim"]
