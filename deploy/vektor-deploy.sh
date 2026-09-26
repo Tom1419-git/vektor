@@ -23,6 +23,7 @@
 set -euo pipefail
 
 REPO_SLUG="Tom1419-git/vektor"
+DEFAULT_BRANCH="main"
 DEPLOY_DIR="/opt/vektor"
 RELEASES_DIR="/opt/vektor-releases"
 COMPOSE_FILE="compose.yml"
@@ -95,9 +96,13 @@ mkdir -p "$stage"
 cleanup() { rm -rf "$stage"; }
 trap cleanup EXIT
 
-log "téléchargement du tarball $tag"
+# Archive du tag ; en --force, archive de la branche par défaut (il
+# n'existe pas de refs/tags/HEAD.tar.gz : 404 prouvé en réel).
+archive="refs/tags/$tag.tar.gz"
+[[ $force -eq 1 ]] && archive="refs/heads/$DEFAULT_BRANCH.tar.gz"
+log "téléchargement du tarball $archive"
 curl -fL --max-time 120 -o "$stage/src.tar.gz" \
-  "https://github.com/$REPO_SLUG/archive/refs/tags/$tag.tar.gz" \
+  "https://github.com/$REPO_SLUG/archive/$archive" \
   || { log "téléchargement impossible — abort"; exit 1; }
 tar -xzf "$stage/src.tar.gz" -C "$stage"
 src=$(echo "$stage"/*/)
