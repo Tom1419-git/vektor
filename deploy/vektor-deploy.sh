@@ -8,9 +8,10 @@
 #     sans authentification).
 #   - Jamais touché : /opt/vektor/.env (secrets), secrets/, knowledge-live/
 #     (contenu live remplacé au besoin depuis le repo knowledge/).
-#   - Rollback : le déploiement précédent est conservé dans
-#     /opt/vektor-releases/<tag>, retour arrière = recreate depuis ce
-#     répertoire (une commande, voir DEPLOIEMENT.md).
+#   - Rétention : les KEEP_RELEASES dernières releases sont conservées
+#     dans /opt/vektor-releases/<tag>, les plus anciennes purgées après
+#     chaque déploiement réussi (jamais la release courante, plan de
+#     rollback — voir DEPLOIEMENT.md).
 #
 # Installation (VPS) :
 #   install -m 0755 deploy/vektor-deploy.sh /usr/local/bin/vektor-deploy
@@ -28,6 +29,7 @@ COMPOSE_FILE="compose.yml"
 API_CONTAINER="vektor-api"
 LOCK_FILE="/run/vektor-deploy.lock"
 HEALTH_TIMEOUT=90
+KEEP_RELEASES=3
 
 log() { echo "[vektor-deploy] $(date '+%F %T') $*"; }
 
@@ -49,6 +51,11 @@ fi
 force=0
 [[ "${1:-}" == "--force" ]] && force=1
 
+# Version courante (pointeur écrit après health OK) : sert au skip des
+# tours inutiles ET à épargner la release de rollback pendant la purge.
+current=""
+[[ -f "$DEPLOY_DIR/version" ]] && current=$(cat "$DEPLOY_DIR/version")
+
 command -v docker >/dev/null || { log "docker absent"; exit 1; }
 command -v curl >/dev/null || { log "curl absent"; exit 1; }
 command -v jq >/dev/null || { log "jq absent (apt install jq)"; exit 1; }
@@ -65,8 +72,6 @@ else
     | jq -r '[.[].name | select(test("^v[0-9]"))][0] // empty')
   [[ -n "$latest_tag" ]] || { log "aucun tag v* trouvé"; exit 0; }
 
-  current=""
-  [[ -f "$DEPLOY_DIR/version" ]] && current=$(cat "$DEPLOY_DIR/version")
   if [[ "$latest_tag" == "$current" ]]; then
     log " déjà déployé ($current) — rien à faire"
     exit 0
@@ -139,6 +144,18 @@ if [[ $healthy -eq 1 ]]; then
   log "✅ $tag déployé et healthy"
   # Conteneurs orphelins d'anciennes versions : nettoyage best-effort
   (cd "$release_dir" && docker compose -p vektor -f "$COMPOSE_FILE" up -d --remove-orphans) >/dev/null 2>&1 || true
+
+  # ── 6. Purge des anciennes releases (garder les KEEP_RELEASES dernières) ─
+  # Uniquement après un deploy RÉUSSI (le chemin rollback ci-dessus peut
+  # encore avoir besoin d'une ancienne release). La release courante est
+  # épargnée explicitement : mtime et ordre logique peuvent diverger.
+  while read -r old; do
+    base=$(basename "$old")
+    if [[ "$base" != "${current:-}" ]]; then
+      log "purge ancienne release $base"
+      rm -rf "$old"
+    fi
+  done < <(ls -1dt "$RELEASES_DIR"/v* 2>/dev/null | tail -n +$((KEEP_RELEASES + 1)))
 else
   log "🔴 health check KO après $HEALTH_TIMEOUT s — ROLLBACK automatique"
   if [[ -n "${current:-}" && -d "$RELEASES_DIR/$current" ]]; then
