@@ -161,6 +161,24 @@ if [[ $healthy -eq 1 ]]; then
       rm -rf "$old"
     fi
   done < <(ls -1dt "$RELEASES_DIR"/v* 2>/dev/null | tail -n +$((KEEP_RELEASES + 1)))
+
+  # ── 7. Self-update : réinstalle le script depuis la release déployée ──
+  # La release ne met jamais à jour l'outil de déploiement lui-même :
+  # sans ce bloc, une nouvelle version du script ne prend effet qu'après
+  # une installation manuelle. Écrit via install + mv (rename atomique) :
+  # l'instance EN COURS garde son inode (bash lit le fichier au fil de
+  # l'eau, une écriture sur place la tronquerait), la nouvelle version
+  # prend effet au prochain tour du watcher. Best-effort : un échec
+  # n'annule pas le déploiement déjà réussi.
+  deployed_script="$release_dir/deploy/vektor-deploy.sh"
+  if [[ -f "$deployed_script" ]]; then
+    if ! cmp -s "$deployed_script" /usr/local/bin/vektor-deploy; then
+      install -m 0755 "$deployed_script" /usr/local/bin/vektor-deploy.new \
+        && mv /usr/local/bin/vektor-deploy.new /usr/local/bin/vektor-deploy \
+        && log "self-update : /usr/local/bin/vektor-deploy remplacé (actif au prochain tour)" \
+        || log "⚠️ self-update impossible — garder l'installation manuelle en tête"
+    fi
+  fi
 else
   log "🔴 health check KO après $HEALTH_TIMEOUT s — ROLLBACK automatique"
   if [[ -n "${current:-}" && -d "$RELEASES_DIR/$current" ]]; then
