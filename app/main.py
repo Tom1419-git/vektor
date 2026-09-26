@@ -260,6 +260,70 @@ async def seeds_endpoint(x_vektor_token: str | None = Header(default=None)):
     return {"report": await seeds_report()}
 
 
+@app.get("/api/qb/status")
+async def qb_status_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """État qBittorrent + lectures Jellyfin en cours. Lecture seule."""
+    require_token(x_vektor_token)
+    from .qbcontrol import jellyfin_playing_count, qb_state
+
+    total, paused = await qb_state()
+    playing = await jellyfin_playing_count()
+    return {"total": total, "paused": paused, "jellyfin_playing": playing}
+
+
+@app.get("/api/qb/{verb}/proposal")
+async def qb_proposal_endpoint(
+    verb: str,
+    x_vektor_token: str | None = Header(default=None),
+    user_id: str = "default",
+    channel: str = "telegram",
+):
+    """Texte de proposition /pause|/resume + enregistrement du registre OUI.
+
+    Aucune exécution ici : le « OUI » envoyé ensuite passe par le chemin
+    normal du chat (graph -> confirm_pending -> canal d'actions SSH)."""
+    if verb not in ("pause", "resume"):
+        raise HTTPException(status_code=404, detail="verb inconnu")
+    require_token(x_vektor_token)
+    from .qbcontrol import proposal_for
+
+    proposal = await proposal_for(verb, f"{channel}:{user_id}")
+    return {"proposal": proposal}
+
+
+@app.post("/api/qb/{verb}")
+async def qb_action_endpoint(
+    verb: str,
+    x_vektor_token: str | None = Header(default=None),
+    user_id: str = "default",
+    channel: str = "telegram",
+):
+    """Confirmation pause|resume : n'exécute QUE l'action en attente.
+
+    Miroir de confirm_pending (registre partagé avec le chat) : sans
+    proposition enregistrée au préalable via /proposal, le POST refuse —
+    pas d'exécution sans la double confirmation."""
+    if verb not in ("pause", "resume"):
+        raise HTTPException(status_code=404, detail="verb inconnu")
+    require_token(x_vektor_token)
+    from . import actions
+
+    user_key = f"{channel}:{user_id}"
+    pending = actions._PENDING.get(user_key)
+    if pending is None:
+        return {"result": f"Aucune action en attente. Envoie /{verb} puis réponds OUI."}
+    expected = f"qb_{verb}_103"
+    if pending[0] != expected:
+        return {
+            "result": f"Une autre action est en attente ({pending[0]}) — "
+            "confirme-la dans la conversation ou attends 2 minutes."
+        }
+    reply = await actions.confirm_pending("OUI", user_key)
+    if reply is None:
+        return {"result": "Confirmation refusée."}
+    return {"result": reply}
+
+
 @app.get("/api/ping")
 async def ping_endpoint(x_vektor_token: str | None = Header(default=None)):
     """Diagnostic du chemin LLM complet, maillon par maillon. Lecture seule."""

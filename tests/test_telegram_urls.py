@@ -24,6 +24,7 @@ EXPECTED = {
     "STATUS_URL": ("/api/status", "VEKTOR_STATUS_URL"),
     "MODEL_URL": ("/api/model", "VEKTOR_MODEL_URL"),
     "SEEDS_URL": ("/api/seeds", "VEKTOR_SEEDS_URL"),
+    "QB_URL": ("/api/qb/status", "VEKTOR_QB_URL"),
     "BACKUPS_URL": ("/api/backups", "VEKTOR_BACKUPS_URL"),
     "DNS_URL": ("/api/dns", "VEKTOR_DNS_URL"),
     "MONITORING_URL": ("/api/monitoring", "VEKTOR_MONITORING_URL"),

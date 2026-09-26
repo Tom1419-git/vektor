@@ -13,6 +13,7 @@ from telegram.ext import (
     filters,
 )
 
+
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 ALLOWED = {
     int(value.strip())
@@ -28,6 +29,7 @@ API_URL = os.environ.get("VEKTOR_API_URL", "http://vektor-api:8000/api/chat")
 STATUS_URL = os.environ.get("VEKTOR_STATUS_URL", "http://vektor-api:8000/api/status")
 MODEL_URL = os.environ.get("VEKTOR_MODEL_URL", "http://vektor-api:8000/api/model")
 SEEDS_URL = os.environ.get("VEKTOR_SEEDS_URL", "http://vektor-api:8000/api/seeds")
+QB_URL = os.environ.get("VEKTOR_QB_URL", "http://vektor-api:8000/api/qb/status")
 BACKUPS_URL = os.environ.get("VEKTOR_BACKUPS_URL", "http://vektor-api:8000/api/backups")
 DNS_URL = os.environ.get("VEKTOR_DNS_URL", "http://vektor-api:8000/api/dns")
 MONITORING_URL = os.environ.get("VEKTOR_MONITORING_URL", "http://vektor-api:8000/api/monitoring")
@@ -50,6 +52,7 @@ _COMMAND_ENDPOINTS: list[tuple[str, str, str]] = [
     ("STATUS_URL", "/api/status", "/status"),
     ("MODEL_URL", "/api/model", "/model"),
     ("SEEDS_URL", "/api/seeds", "/seeds"),
+    ("QB_URL", "/api/qb/status", "/pause /resume"),
     ("BACKUPS_URL", "/api/backups", "/backups"),
     ("DNS_URL", "/api/dns", "/dns"),
     ("MONITORING_URL", "/api/monitoring", "/monitoring"),
@@ -140,6 +143,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/status : rapport homelab complet en direct\n"
             "/model : ma fiche technique (modèle, hardware, latence)\n"
             "/seeds : top seeding qBittorrent + espace staging récupérable\n"
+            "/pause : mettre les téléchargements en pause (confirmation OUI)\n"
+            "/resume : reprendre les téléchargements (confirmation OUI)\n"
             "/backups : derniers backups vzdump (âge, taille)\n"
             "/dns : sonde des résolveurs DNS\n"
             "/monitoring : état des checks de monitoring\n"
@@ -273,6 +278,39 @@ async def monitoring_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_long(update.message, response.json()["report"])
 
 
+async def pause_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pause globale qBittorrent — proposition via l'API, exécution sur OUI."""
+    await _qb_cmd(update, context, "pause")
+
+
+async def resume_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reprise globale qBittorrent — proposition via l'API, exécution sur OUI."""
+    await _qb_cmd(update, context, "resume")
+
+
+async def _qb_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE, verb: str):
+    """Relais pur : l'API (qui seule a la clé SSH et le registre OUI)
+    renvoie le texte de proposition ; la confirmation « OUI » suit ensuite
+    le chemin normal du chat (handle_message -> /api/chat -> graph)."""
+    if not is_allowed(update) or not update.message:
+        return
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(
+                f"{QB_URL.rsplit('/', 1)[0]}/{verb}/proposal",
+                params={"user_id": str(update.effective_user.id), "channel": "telegram"},
+                headers=HEADERS,
+            )
+    except httpx.HTTPError:
+        await update.message.reply_text("API indisponible pour préparer l'action.")
+        return
+    if response.status_code != 200:
+        await update.message.reply_text("Impossible de préparer l'action (API).")
+        return
+    await update.message.reply_text(response.json()["proposal"])
+
+
 async def ops_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Exploitation de Vektor : version déployée, conteneur, supervision — sans LLM."""
     if not is_allowed(update) or not update.message:
@@ -359,6 +397,8 @@ async def post_init(application: Application) -> None:
             BotCommand("status", "Rapport homelab complet en direct"),
             BotCommand("model", "Fiche technique de Vektor (modèle, hardware, latence)"),
             BotCommand("seeds", "Top seeding qBittorrent + espace staging récupérable"),
+            BotCommand("pause", "Mettre les téléchargements en pause"),
+            BotCommand("resume", "Reprendre les téléchargements"),
             BotCommand("backups", "Derniers backups vzdump (âge, taille)"),
             BotCommand("dns", "Sonde des résolveurs DNS"),
             BotCommand("monitoring", "État des checks de monitoring"),
@@ -475,6 +515,8 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("dns", dns_cmd))
     application.add_handler(CommandHandler("monitoring", monitoring_cmd))
     application.add_handler(CommandHandler("ops", ops_cmd))
+    application.add_handler(CommandHandler("pause", pause_cmd))
+    application.add_handler(CommandHandler("resume", resume_cmd))
     application.add_handler(CommandHandler("ping", ping_cmd))
     application.add_handler(CommandHandler("reload", reload_doc))
     application.add_handler(CommandHandler("forget", forget))
