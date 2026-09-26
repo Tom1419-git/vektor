@@ -7,5 +7,5 @@ asyncpg==0.30.0
 langchain-core==0.3.29
 langchain-ollama==0.2.2
 langgraph==0.2.60
-python-telegram-bot==21.10
+python-telegram-bot[job-queue]==21.10
 psutil==6.1.1

@@ -606,7 +606,12 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("ops", ops_cmd))
     application.add_handler(CommandHandler("matin", matin_cmd))
     application.add_handler(CallbackQueryHandler(qb_callback, pattern="^qb:"))
-    application.job_queue.run_repeating(morning_push, interval=600, first=10)
+    if application.job_queue is not None:
+        # Garde-fou : l'extra [job-queue] est requis ; sans lui, job_queue
+        # est None et le bot crasherait au démarrage (vécu en v1.6.0).
+        application.job_queue.run_repeating(morning_push, interval=600, first=10)
+    else:
+        logger.warning("JobQueue absent : le push matinal 07:55 est désactivé")
     application.add_handler(CommandHandler("pause", pause_cmd))
     application.add_handler(CommandHandler("resume", resume_cmd))
     application.add_handler(CommandHandler("ping", ping_cmd))
