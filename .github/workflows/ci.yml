@@ -29,3 +29,11 @@ jobs:
 
       - name: Lancer les tests
         run: pytest -v
+
+  deploy-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test de la logique de purge (fixtures de fausses releases)
+        run: bash deploy/test-purge.sh
