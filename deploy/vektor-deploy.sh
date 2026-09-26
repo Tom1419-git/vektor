@@ -147,8 +147,11 @@ if [[ $healthy -eq 1 ]]; then
   # du même tag à chaque tour du watcher. SANS lui, le watcher reboucle.
   echo "$tag" > "$DEPLOY_DIR/version"
   log "✅ $tag déployé et healthy"
-  # Conteneurs orphelins d'anciennes versions : nettoyage best-effort
-  (cd "$release_dir" && docker compose -p vektor -f "$COMPOSE_FILE" up -d --remove-orphans) >/dev/null 2>&1 || true
+  # Conteneurs orphelins d'anciennes versions : nettoyage best-effort.
+  # ⚠️ --profile telegram OBLIGATOIRE : sans lui, compose détache le
+  # conteneur telegram (service en profil) au lieu de le recréer —
+  # vécu en v1.5.8 : API neuve, bot resté 20 h sur l'ancienne image.
+  (cd "$release_dir" && docker compose -p vektor -f "$COMPOSE_FILE" --profile telegram up -d --remove-orphans) >/dev/null 2>&1 || true
 
   # ── 6. Purge des anciennes releases (garder les KEEP_RELEASES dernières) ─
   # Uniquement après un deploy RÉUSSI (le chemin rollback ci-dessus peut
