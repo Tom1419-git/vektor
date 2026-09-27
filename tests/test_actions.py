@@ -20,6 +20,29 @@ async def test_lxc_restart_capture_le_numero():
     assert action == "lxc_restart_102"
 
 
+async def test_detect_updates_scan():
+    for phrase in (
+        "check les updates",
+        "vérifie les mises à jour",
+        "cherche les nouvelles images",
+        "/checkupdates",
+    ):
+        label, action = actions.detect_action(phrase)
+        assert action == "docker_updates_scan", phrase
+
+
+async def test_detect_updates_apply():
+    for phrase in ("applique les mises à jour", "mets à jour les conteneurs", "/maj"):
+        label, action = actions.detect_action(phrase)
+        assert action == "docker_updates_apply", phrase
+
+
+async def test_updates_scan_ne_declenche_pas_apply():
+    # Le mot « updates » seul (scan) ne doit pas matcher le pattern apply
+    label, action = actions.detect_action("check updates")
+    assert action == "docker_updates_scan"
+
+
 async def test_confirmation_sans_action_en_attente():
     actions._PENDING.clear()
     reply = await actions.confirm_pending("OUI", "test:user")

@@ -41,6 +41,10 @@ services:
       OLLAMA_BASE_URL: http://172.20.0.1:11434
       VEKTOR_API_URL: http://vektor-api:8000/api/chat
     networks: [caddy_default, vektor]
+    ports:
+      # Webhook Grafana selfheal : Grafana tourne en network host (ne voit pas
+      # le DNS docker) -> URL http://127.0.0.1:8010 (loopback uniquement).
+      - "127.0.0.1:8010:8000"
     depends_on:
       postgres:
         condition: service_healthy

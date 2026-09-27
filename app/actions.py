@@ -49,6 +49,31 @@ ACTION_PATTERNS: list[tuple[re.Pattern, str]] = [
         re.compile(r"\b(?:scan|rerafra[îi]ch|rescan)\w*\s+(?:la\s+)?biblioth[èe]que\b", re.I),
         "sonarr_rescan",
     ),
+    # Mises à jour des images Docker (scan puis apply sous confirmation OUI)
+    (
+        re.compile(r"\b(?:check|verifie|v[ée]rifie|regarde|cherche|liste|scan)\w*\s+(?:les\s+)?(?:mises?\s+[àa]\s+jour|updates?|nouvelles?\s+(?:versions?|images?))\b", re.I),
+        "docker_updates_scan",
+    ),
+    (
+        re.compile(r"^/(checkupdates|updates)\b", re.I),
+        "docker_updates_scan",
+    ),
+    (
+        re.compile(r"\b(?:applique|installe|d[ée]ploy\w*)\w*\s+(?:les\s+)?(?:mises?[\s-]?à?[\s-]?jours?|updates?|maj|mises?[\s-]?à?[\s-]?jours?)\b", re.I),
+        "docker_updates_apply",
+    ),
+    (
+        re.compile(r"\b(?:mets?|met)[\s-]+à[\s-]+jour\w*\s+(?:les\s+)?(?:conteneurs?|images?|stacks?|docker|tout)\b", re.I),
+        "docker_updates_apply",
+    ),
+    (
+        re.compile(r"\b(?:update|upgrade)\w*\s+(?:the\s+)?(?:containers?|images?|stacks?|docker|all)\b", re.I),
+        "docker_updates_apply",
+    ),
+    (
+        re.compile(r"^/(applyupdates|maj)\b", re.I),
+        "docker_updates_apply",
+    ),
     # Pause / reprise globale qBittorrent (commandes slash et langage naturel)
     (
         re.compile(r"^/(pause)\b", re.I),
@@ -104,6 +129,12 @@ def propose(action: str, user_key: str) -> str:
         app = action[: -len("_rescan")]
         pretty = "Sonarr" if app == "sonarr" else "Radarr"
         human = f"rescan de la bibliothèque {pretty} (CT 103)"
+    elif action == "docker_updates_scan":
+        human = "scan des mises à jour des images Docker (CT 103/104, rien ne redémarre)"
+    elif action == "docker_updates_apply":
+        human = ("mise à jour APPLIQUÉE des conteneurs Docker (CT 103/104) : "
+                 "recréation de ceux qui ont une nouvelle image — plusieurs minutes, "
+                 "jamais pendant un stream")
     elif action == "qb_pause_103":
         human = "pause de TOUS les téléchargements qBittorrent (CT 103)"
     elif action == "qb_resume_103":
@@ -157,6 +188,8 @@ def _pending_notice(user_key: str) -> str | None:
 async def _execute(action: str) -> str:
     if not os.path.exists(ACTIONS_SSH_KEY):
         return "Canal d'actions non configuré (clé absente). Refus."
+    # Le scan/apply des updates pull de vraies images : plusieurs minutes.
+    timeout = 900 if action.startswith("docker_updates_") else 120
     try:
         proc = await asyncio.create_subprocess_exec(
             "ssh",
@@ -170,7 +203,7 @@ async def _execute(action: str) -> str:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except (asyncio.TimeoutError, OSError):
         return "Canal d'actions indisponible pour le moment."
     text = stdout.decode(errors="replace").strip()
