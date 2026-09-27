@@ -29,6 +29,7 @@ EXPECTED = {
     "DNS_URL": ("/api/dns", "VEKTOR_DNS_URL"),
     "MONITORING_URL": ("/api/monitoring", "VEKTOR_MONITORING_URL"),
     "OPS_URL": ("/api/ops", "VEKTOR_OPS_URL"),
+    "MAJLIST_URL": ("/api/majlist", "VEKTOR_MAJLIST_URL"),
     "PING_URL": ("/api/ping", "VEKTOR_PING_URL"),
     "RELOAD_URL": ("/api/reload-doc", "VEKTOR_RELOAD_URL"),
     "FORGET_URL": ("/api/forget", "VEKTOR_FORGET_URL"),

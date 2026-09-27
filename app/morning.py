@@ -13,6 +13,8 @@ import time
 
 import httpx
 
+from . import actions as actions_mod
+
 HC_API_URL = os.environ.get("VEKTOR_HC_API_URL", "")
 HC_READ_TOKEN = os.environ.get("VEKTOR_HC_READ_TOKEN", "")
 PVE_API_URL = os.environ.get("PVE_API_URL", "https://PVE_HOST:8006")
@@ -100,6 +102,29 @@ async def _lvm_lines() -> list[str]:
     return lines
 
 
+async def _cis_line() -> list[str]:
+    """Score CIS-L1 PegaProx via le canal d'actions (lecture seule, état et
+    détection de régression côté PVE). Silencieux si indisponible — mais
+    une RÉGRESSION est remontée en tête du rapport par morning_report."""
+    try:
+        raw = await actions_mod._execute("pegaprox_cis")
+    except Exception:
+        return False, []
+    lines: list[str] = []
+    regression = False
+    for raw_line in (raw or "").splitlines():
+        raw_line = raw_line.strip()
+        if "|" not in raw_line:
+            continue
+        tag, text = raw_line.split("|", 1)
+        if tag == "RED":
+            lines.append(text)
+            regression = True
+        elif tag == "OK" and text:
+            lines.append(text)
+    return regression, lines
+
+
 async def morning_report() -> str:
     """Le récit du matin, chiffré et hiérarchisé."""
     lines: list[str] = ["🌅 **Bonjour — la nuit en résumé**"]
@@ -137,7 +162,18 @@ async def morning_report() -> str:
         lines.append("🗄️ Stockage PVE :")
         lines.extend(f"   {line}" for line in lvm)
 
-    # 3. Conclusion adaptive
+    # 3. Compliance : score CIS-L1 PegaProx (régression = ligne + action)
+    cis_regression, cis_lines = await _cis_line()
+    if cis_lines:
+        if not cis_regression:
+            lines.append("")
+        lines.extend(cis_lines)
+
+    # 4. Conclusion adaptive
+    # 3bis. Une régression CIS passe AVANT la conclusion : impossible à rater.
+    if cis_regression:
+        lines.append("👉 Ouvre PegaProx (https://pegaprox.mayoraz-net.ch) : la section hardening détaille les contrôles en échec.")
+
     if not down:
         lines.append("✅ Rien à faire ce matin.")
     else:

@@ -418,6 +418,14 @@ async def monitoring_endpoint(x_vektor_token: str | None = Header(default=None))
     return {"report": await watch_mod.monitoring_report()}
 
 
+@app.get("/api/majlist")
+async def majlist_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """Inventaire des versions des conteneurs Docker (actuelle vs dispo).
+    Lecture seule, mais pull les refs d'images : plusieurs minutes possibles."""
+    require_token(x_vektor_token)
+    return {"report": await __import__("app.actions", fromlist=["_execute"])._execute("docker_updates_list")}
+
+
 @app.get("/api/morning")
 async def morning_endpoint(x_vektor_token: str | None = Header(default=None)):
     """Rapport matinal narratif (chiffres live, sans LLM)."""
@@ -507,6 +515,7 @@ _WEB_PAGE = """<!doctype html>
   <button class="chip" data-cmd="/pause" title="Pause globale des téléchargements (confirmation OUI)">⏸️ Pause</button>
   <button class="chip" data-cmd="/resume" title="Reprise des téléchargements (confirmation OUI)">▶️ Resume</button>
   <button class="chip" data-cmd="/snapls" title="Snapshots à expiration automatique">📸 Snaps</button>
+  <button class="chip" data-cmd="/majlist" title="Versions des conteneurs : actuelle vs disponible">📦 MajList</button>
 </div>
 <form id="f" hidden>
   <textarea id="t" placeholder="Demande-moi quelque chose… (ou clique un raccourci)"></textarea>
@@ -620,6 +629,9 @@ _WEB_COMMANDS: dict[str, object] = {
     "/model": lambda: model_card(),
     "/matin": lambda: __import__("app.morning", fromlist=["morning_report"]).morning_report(),
     "/snapls": lambda: __import__("app.actions", fromlist=["_execute"])._execute("lxc_snapls"),
+    # /majlist : inventaire versions (lecture seule) via le canal d'actions —
+    # pull des refs d'images : jusqu'à quelques minutes.
+    "/majlist": lambda: __import__("app.actions", fromlist=["_execute"])._execute("docker_updates_list"),
     # /pause et /resume ne sont PAS des commandes directes : ils passent
     # par le chemin agent (proposition + confirmation OUI, registre partagé
     # avec Telegram). Délibéré : une écriture ne doit jamais être un simple

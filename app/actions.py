@@ -58,6 +58,19 @@ ACTION_PATTERNS: list[tuple[re.Pattern, str]] = [
         re.compile(r"^/(checkupdates|updates)\b", re.I),
         "docker_updates_scan",
     ),
+    # Inventaire lecture seule des versions (commande /majlist)
+    (
+        re.compile(r"^/majlist\b", re.I),
+        "docker_updates_list",
+    ),
+    (
+        re.compile(r"\b(?:liste|montre|affiche)[\w-]*\s+(?:les\s+)?(?:conteneurs?|images?)\b", re.I),
+        "docker_updates_list",
+    ),
+    (
+        re.compile(r"\bversions?\s+(?:actuelle?s?\s+et\s+disponibles?\s+)?(?:des?\s+)?(?:conteneurs?|images?|stacks?)\b", re.I),
+        "docker_updates_list",
+    ),
     (
         re.compile(r"\b(?:applique|installe|d[ée]ploy\w*)\w*\s+(?:les\s+)?(?:mises?[\s-]?à?[\s-]?jours?|updates?|maj|mises?[\s-]?à?[\s-]?jours?)\b", re.I),
         "docker_updates_apply",
@@ -135,6 +148,9 @@ def propose(action: str, user_key: str) -> str:
         human = ("mise à jour APPLIQUÉE des conteneurs Docker (CT 103/104) : "
                  "recréation de ceux qui ont une nouvelle image — plusieurs minutes, "
                  "jamais pendant un stream")
+    elif action == "docker_updates_list":
+        human = ("inventaire des versions des conteneurs Docker (CT 103/104) : "
+                 "lecture seule, mais rafraîchit les refs d'images (pull)")
     elif action == "qb_pause_103":
         human = "pause de TOUS les téléchargements qBittorrent (CT 103)"
     elif action == "qb_resume_103":

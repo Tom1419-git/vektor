@@ -5,6 +5,10 @@
 #           puis liste des conteneurs dont l'ID image courant diffère de
 #           l'ID fraîchement pullé -> « MAJ disponible » ou « à jour ».
 #           NE REDÉMARRE RIEN.
+#   list  : comme scan (pull + comparaison des digests distants) mais
+#           affiche PILE PAR PILE chaque conteneur : tag courant de son
+#           image vs digest de la dernière version disponible. Rapport
+#           lecture seule (/majlist) : n'alimente ni OUI ni apply.
 #   apply : pour chaque stack avec au moins un conteneur à image plus récente
 #           (hors blacklist), docker compose up -d (recrée avec la nouvelle
 #           image). Compose-only : qbittorrent (hors compose) jamais touché.
@@ -21,7 +25,7 @@ set -u
 export MODE="${1:-scan}"
 
 case "$MODE" in
-  scan|apply) ;;
+  scan|apply|list) ;;
   *) echo "REFUS: mode inconnu (scan|apply)"; exit 1 ;;
 esac
 
@@ -51,6 +55,29 @@ for d in $(docker ps --format "{{.Names}}" | while read n; do
   [ -f "$d/docker-compose.yml" ] || [ -f "$d/compose.yml" ] || continue
   base=$(basename "$d")
   cd "$d" 2>/dev/null || continue
+  if [ "$MODE" = "list" ]; then
+    # Rapport detaille : tag courant vs digest de la derniere image dispo.
+    # Meme semantique que scan : apres pull, un tag qui ne pointe plus vers
+    # l image du conteneur signale une version plus recente disponible.
+    for n in $(docker compose ps --quiet 2>/dev/null); do
+      name=$(docker inspect "$n" -f "{{.Name}}" | sed "s|^/||")
+      echo "$name" | grep -qiE "$BLACKLIST" && continue
+      src=$(docker inspect "$n" -f "{{.Config.Image}}")
+      version=${src#*:}
+      [ "$version" = "$src" ] && version=latest
+      img=$(docker inspect "$n" -f "{{.Image}}")
+      newid=$(docker image inspect "$src" -f "{{.Id}}" 2>/dev/null)
+      if [ -z "$newid" ]; then
+        echo "    $name : $version (image introuvable localement)"
+      elif [ "$img" = "$newid" ]; then
+        echo "    $name : $version (a jour)"
+      else
+        digest=$(docker image inspect "$newid" -f "{{index .RepoDigests 0}}" 2>/dev/null | sed "s|^.*@||; s|^sha256:||; s|^\(............\).*|\1|")
+        echo "    $name : $version -> NOUVELLE IMAGE dispo (digest ${digest:-?})"
+      fi
+    done
+    continue
+  fi
   todo=""
   for n in $(docker compose ps --quiet 2>/dev/null); do
     name=$(docker inspect "$n" -f "{{.Name}}" | sed "s|^/||")
@@ -73,7 +100,7 @@ done
 
 for CT in $CTS; do
   echo "=== CT $CT ==="
-  if [ "$MODE" = "scan" ]; then
+  if [ "$MODE" != "apply" ]; then
     # Pull de toutes les stacks (silencieux) : met à jour les refs locales
     pct exec "$CT" -- bash -c "$DISCOVER" 2>/dev/null | while IFS= read -r d; do
       pct exec "$CT" -- bash -c "cd '$d' 2>/dev/null && docker compose pull --quiet" >/dev/null 2>&1
