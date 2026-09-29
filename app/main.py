@@ -363,6 +363,33 @@ async def qb_action_endpoint(
     return {"result": reply}
 
 
+@app.get("/api/snap")
+async def snap_endpoint(
+    ct: str = "103",
+    x_vektor_token: str | None = Header(default=None),
+):
+    """Snapshot thin du CT demandé — classe AUTONOME (pas de OUI).
+
+    Réversible par construction : le snapshot expire tout seul (7 jours,
+    sweep PVE horaire). Aucun service n'est interrompu. Le CT est validé
+    ici pour un message clair ; le script PVE re-valide de toute façon."""
+    require_token(x_vektor_token)
+    if ct not in {"101", "102", "103", "104", "105", "106", "107"}:
+        raise HTTPException(status_code=400, detail="CT inconnu (autorisés : 101-107)")
+    from . import actions
+
+    return {"report": await actions.execute_autonomous(f"lxc_snap_{ct}_pre-update")}
+
+
+@app.get("/api/snapls")
+async def snapls_endpoint(x_vektor_token: str | None = Header(default=None)):
+    """Inventaire des snapshots à expiration automatique. Lecture seule."""
+    require_token(x_vektor_token)
+    from . import actions
+
+    return {"report": await actions.execute_autonomous("lxc_snapls")}
+
+
 @app.get("/api/ping")
 async def ping_endpoint(x_vektor_token: str | None = Header(default=None)):
     """Diagnostic du chemin LLM complet, maillon par maillon. Lecture seule."""
@@ -514,7 +541,8 @@ _WEB_PAGE = """<!doctype html>
   <button class="chip" data-cmd="/matin" title="La nuit en résumé">🌅 Matin</button>
   <button class="chip" data-cmd="/pause" title="Pause globale des téléchargements (confirmation OUI)">⏸️ Pause</button>
   <button class="chip" data-cmd="/resume" title="Reprise des téléchargements (confirmation OUI)">▶️ Resume</button>
-  <button class="chip" data-cmd="/snapls" title="Snapshots à expiration automatique">📸 Snaps</button>
+  <button class="chip" data-cmd="/snap" title="Snapshot réversible du CT 103 (purge auto 7 jours)">📸 Snap</button>
+  <button class="chip" data-cmd="/snapls" title="Snapshots à expiration automatique">📋 Snapls</button>
   <button class="chip" data-cmd="/majlist" title="Versions des conteneurs : actuelle vs disponible">📦 MajList</button>
 </div>
 <form id="f" hidden>
@@ -628,7 +656,10 @@ _WEB_COMMANDS: dict[str, object] = {
     "/ops": lambda: ops_report(),
     "/model": lambda: model_card(),
     "/matin": lambda: __import__("app.morning", fromlist=["morning_report"]).morning_report(),
-    "/snapls": lambda: __import__("app.actions", fromlist=["_execute"])._execute("lxc_snapls"),
+    "/snapls": lambda: __import__("app.actions", fromlist=["execute_autonomous"]).execute_autonomous("lxc_snapls"),
+    # /snap : snapshot thin CT 103 par défaut — classe autonome (réversible,
+    # purge auto 7 jours). Aucune confirmation : rien d'irréversible ici.
+    "/snap": lambda: __import__("app.actions", fromlist=["execute_autonomous"]).execute_autonomous("lxc_snap_103_pre-update"),
     # /majlist : inventaire versions (lecture seule) via le canal d'actions —
     # pull des refs d'images : jusqu'à quelques minutes.
     "/majlist": lambda: __import__("app.actions", fromlist=["_execute"])._execute("docker_updates_list"),

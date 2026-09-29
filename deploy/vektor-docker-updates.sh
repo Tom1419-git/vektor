@@ -14,7 +14,8 @@
 #           image). Compose-only : qbittorrent (hors compose) jamais touché.
 #
 # Sécurité :
-#   - CT whitelistés : 103 (arr-stack), 104 (tools). Rien d'autre.
+#   - CT whitelistés : 103 (arr-stack), 104 (tools), 111 (indexer/bitmagnet).
+#     Rien d'autre.
 #   - Blacklist de noms : authelia, portainer, healthchecks, sftpgo.
 #   - Garde-fou stream (apply) : refuse si une lecture Jellyfin est en cours
 #     (état du stream-guard, rafraîchi à chaque tick 60 s).
@@ -29,7 +30,7 @@ case "$MODE" in
   *) echo "REFUS: mode inconnu (scan|apply)"; exit 1 ;;
 esac
 
-CTS="103 104"
+CTS="103 104 111"
 export BLACKLIST='^(authelia|portainer|healthchecks|sftpgo)$'
 
 if [ "$MODE" = "apply" ]; then

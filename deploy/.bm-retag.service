@@ -1,0 +1,9 @@
+[Unit]
+Description=Vektor - retag quotidien des nouveaux torrents bitmagnet (CT 111)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bm-retag-daily
+TimeoutStartSec=3600

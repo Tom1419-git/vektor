@@ -1,0 +1,52 @@
+services:
+  caddy-failover:
+    image: caddy:2-alpine
+    container_name: caddy-failover
+    ports:
+      - "192.168.1.61:443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-failover-data:/data
+      - caddy-failover-config:/config
+    networks: [authelia-net]
+    restart: unless-stopped
+
+  # Démarre avec le token réel : docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    networks: [authelia-net]
+    restart: unless-stopped
+    depends_on: [caddy-failover]
+
+  # Sidecar santé tunnel : pinge Healthchecks tant que cloudflared est prêt.
+  # Si les pings s'arrêtent (tunnel mort), le check cloudflared-tunnel passe
+  # en down après le délai de grâce -> alerte Telegram.
+  # Dans le profil "tunnel" : si le tunnel est volontairement retiré, le
+  # sidecar s'arrête aussi (pas de fausse alerte tant que le tunnel n'existe pas).
+  tunnel-hc:
+    image: curlimages/curl:latest
+    container_name: tunnel-hc
+    profiles: ["tunnel"]
+    command: sh /tunnel-hc.sh
+    environment:
+      - HC_PING_URL=${HC_PING_URL}
+      - TUNNEL_METRICS=http://cloudflared:20241
+    volumes:
+      - ./tunnel-hc.sh:/tunnel-hc.sh:ro
+    networks: [authelia-net]
+    restart: unless-stopped
+    depends_on: [cloudflared]
+
+networks:
+  authelia-net:
+    external: true
+    name: authelia_default
+
+volumes:
+  caddy-failover-data:
+  caddy-failover-config:

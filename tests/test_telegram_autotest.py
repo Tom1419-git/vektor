@@ -21,6 +21,7 @@ KNOWN_ENDPOINTS = {
     "/api/chat", "/api/status", "/api/model", "/api/seeds", "/api/backups",
     "/api/dns", "/api/monitoring", "/api/ops", "/api/ping", "/api/reload-doc", "/api/forget",
     "/api/qb/status", "/api/morning", "/api/majlist",
+    "/api/snap", "/api/snapls",
 }
 
 

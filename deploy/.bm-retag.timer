@@ -1,0 +1,9 @@
+[Unit]
+Description=Vektor - timer retag bitmagnet quotidien (07h30 UTC = 09h30 FR, hors fenetres recherches arr 21h-00h et Tdarr 00h-07h)
+
+[Timer]
+OnCalendar=*-*-* 07:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

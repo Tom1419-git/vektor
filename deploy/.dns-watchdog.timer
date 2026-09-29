@@ -1,0 +1,10 @@
+[Unit]
+Description=Vektor - timer watchdog DNS (toutes les 5 min)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

@@ -72,7 +72,13 @@ via le tool-calling natif :
 ### Actions d'écriture (sécurisées)
 Un flux strict en deux temps, impossible à contourner :
 1. **Détection** : la demande correspond à une action de la whitelist (expressions régulières)
-2. **Proposition** : Vektor annonce l'action et attend un `OUI` explicite (expire après 120 s)
+2. **Graduation de risque (v1.7.0)** : l'action est classée par `is_autonomous()`.
+   - **Autonome** (réversible/informationnelle : snapshot LXC à purge auto 7 jours,
+     inventaire des snapshots, scan/inventaire des updates Docker, fstrim) :
+     exécution **immédiate** via `execute_autonomous()` — pas d'attente, pas de OUI.
+     Toute action critique reçue par ce chemin est REFUSÉE côté app.
+   - **Critique** (restart, reboot, apply updates, pause qBit) :
+3. **Proposition** : Vektor annonce l'action et attend un `OUI` explicite (expire après 120 s)
 
 Actions disponibles : redémarrage d'un CT LXC, redémarrage d'un conteneur Docker
 (services critiques comme DNS ou authentification **blacklistés**), rescan de bibliothèque

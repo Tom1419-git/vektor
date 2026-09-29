@@ -19,11 +19,16 @@ vocal Alexa est construit mais pas encore opérationnel sur l'Echo). **Il est ca
 infrastructure en moins d'une seconde (CPU, RAM, stockage, conteneurs, services,
 torrents) sans jamais passer par le LLM pour les chiffres, répondre aux questions
 générales avec un LLM local enrichi d'une documentation indexée (RAG) et de la
-mémoire des conversations passées, et exécuter quelques actions d'administration
-(redémarrages, rescans, pause des téléchargements) toujours après une double
-confirmation explicite. **Il n'est pas capable de** : agir en agent autonome (le
-LLM ne décide rien ni n'exécute rien lui-même), faire une action hors de sa
-whitelist fermée, écouter en continu hors Alexa, ni servir plusieurs
+mémoire des conversations passées, et exécuter des actions d'administration selon
+une **graduation de risque** (v1.7.0) : les actions **réversibles ou
+informationnelles** s'exécutent de façon autonome et immédiate (snapshot LXC
+réversible purgé au bout de 7 jours, inventaire des snapshots, scan des mises à
+jour Docker, fstrim) — tandis que les actions **critiques** (redémarrages,
+rescans, application des mises à jour, pause des téléchargements) exigent toujours
+une double confirmation explicite. **Il n'est pas capable de** : laisser le LLM
+décider ou exécuter quoi que ce soit (les actions passent par un routeur
+déterministe, jamais par l'inférence), faire une action hors de sa whitelist
+fermée, écouter en continu hors Alexa, ni servir plusieurs
 utilisateurs (whitelist stricte, mono-utilisateur). C'est un assistant fiable
 et verrouillé, pas une IA omnipotente — un choix de sécurité assumé.
 

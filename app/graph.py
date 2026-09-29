@@ -191,13 +191,22 @@ async def run_agent(memory: Memory, text: str, history: list[dict[str, str]], us
     if confirmation is not None:
         return confirmation
 
-    # 2. Intention d'action whitelistée ? -> proposition, jamais d'exécution directe
+    # 2. Intention d'action whitelistée ? -> classe autonome = exécution
+    #    immédiate (réversible/informationnelle : snapshots, inventaires, scan) ;
+    #    classe critique = proposition, jamais d'exécution sans OUI explicite.
     detected = actions.detect_action(text)
     if detected:
+        action = detected[1]
+        if actions.is_autonomous(action):
+            result = await actions.execute_autonomous(action)
+            return (
+                "🤖 Action autonome exécutée (réversible, sans confirmation) :\n"
+                f"{result}"
+            )
         already = actions._pending_notice(user_key)
         if already:
             return already
-        return actions.propose(detected[1], user_key)
+        return actions.propose(action, user_key)
 
     # 3. Routeur déterministe : donnée infra évidente -> réponse live sans LLM
     live_result = await t.infra_live_report(text)

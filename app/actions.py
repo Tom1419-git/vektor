@@ -1,16 +1,23 @@
-"""Actions d'écriture avec double confirmation obligatoire.
+"""Actions d'écriture avec graduation de risque (v1.7.0).
 
-Flux :
-1. L'utilisateur demande une action (« redémarre jellyfin »).
-2. `detect_action()` la reconnaît (whitelist stricte) et renvoie une PROPOSITION.
-3. Rien n'est exécuté : Vektor demande de confirmer avec « OUI ».
-4. `confirm_pending()` n'exécute que si l'utilisateur renvoie exactement OUI
-   dans la même conversation, et uniquement l'action proposée (jamais déduite
-   du texte de confirmation).
+Deux classes, un seul canal d'exécution (SSH à commande forcée vers
+/usr/local/bin/vektor-actions sur le PVE, qui re-valide un format fermé) :
 
-L'exécution passe par un canal SSH à commande forcée : la clé ne peut lancer
-que /usr/local/bin/vektor-actions sur le PVE, qui re-valide un format fermé
-(CT 101-106, blacklist des services critiques). Aucune commande libre.
+1. CRITIQUE — double confirmation obligatoire (historique v1) :
+   1. L'utilisateur demande une action (« redémarre jellyfin »).
+   2. `detect_action()` la reconnaît (whitelist stricte) et renvoie une PROPOSITION.
+   3. Rien n'est exécuté : Vektor demande de confirmer avec « OUI ».
+   4. `confirm_pending()` n'exécute que si l'utilisateur renvoie exactement OUI
+      dans la même conversation, et uniquement l'action proposée (jamais déduite
+      du texte de confirmation).
+
+2. AUTONOME — exécution immédiate sans confirmation (v1.7.0) : réservée aux
+   actions RÉVERSIBLES ou strictement informationnelles (`AUTONOMOUS_ACTIONS`) :
+   snapshots LXC à expiration automatique 7 jours, inventaire des snapshots,
+   scan/inventaire des mises à jour Docker (aucun conteneur redémarré), fstrim.
+   Le pire cas est un LV snapshot qui disparaît tout seul dans 7 jours.
+   `execute_autonomous()` REFUSE toute action hors de cette classe : une
+   critique ne peut jamais passer par le chemin autonome.
 """
 from __future__ import annotations
 
@@ -87,6 +94,38 @@ ACTION_PATTERNS: list[tuple[re.Pattern, str]] = [
         re.compile(r"^/(applyupdates|maj)\b", re.I),
         "docker_updates_apply",
     ),
+    # ── Classe autonome : snapshots réversibles + inventaires (v1.7.0) ──
+    # /snap [CT] : snapshot thin du disque du CT, expiration auto 7 jours.
+    # Sans CT explicite : CT 103 (stack arr, la plus souvent mise à jour).
+    # Le script PVE n'accepte que CT 101-107 et un label [a-z0-9-]{1,24}.
+    (
+        re.compile(r"^/snap\s+(101|102|103|104|105|106|107)\s*$", re.I),
+        "lxc_snap_{0}_pre-update",
+    ),
+    (
+        re.compile(r"^/snap\s*$", re.I),
+        "lxc_snap_pre-update",
+    ),
+    (
+        re.compile(
+            r"\bsnapshot\s+(?:du\s+|de\s+|sur\s+)?(?:CT\s*)?(101|102|103|104|105|106|107)\b",
+            re.I,
+        ),
+        "lxc_snap_{0}_pre-update",
+    ),
+    (
+        re.compile(r"\b(?:fais?|prend|cr[ée]e|lance)\w*\s+(?:un\s+)?snapshot\b", re.I),
+        "lxc_snap_pre-update",
+    ),
+    # Inventaire des snapshots à expiration (lecture seule)
+    (
+        re.compile(r"^/snapls\s*$", re.I),
+        "lxc_snapls",
+    ),
+    (
+        re.compile(r"\b(?:liste|montre|affiche)\w*\s+(?:les\s+)?snapshots?\b", re.I),
+        "lxc_snapls",
+    ),
     # Pause / reprise globale qBittorrent (commandes slash et langage naturel)
     (
         re.compile(r"^/(pause)\b", re.I),
@@ -106,6 +145,39 @@ ACTION_PATTERNS: list[tuple[re.Pattern, str]] = [
     ),
 ]
 
+# Classe autonome (v1.7.0) : actions exécutables SANS confirmation OUI.
+# Critères stricts : réversible (snapshot avec expiration auto) ou purement
+# informationnelle (inventaires, scans sans effet sur les conteneurs).
+# Les actions générées `lxc_snap_<ct>_<label>` sont couvertes par le préfixe
+# (« lxc_snapls » ne contient pas « lxc_snap_ », pas de faux positif).
+AUTONOMOUS_EXACT = frozenset({
+    "pve_fstrim",
+    "lxc_snapls",
+    "docker_updates_scan",
+    "docker_updates_list",
+})
+AUTONOMOUS_PREFIXES = ("lxc_snap_",)
+
+
+def is_autonomous(action: str) -> bool:
+    """True si l'action peut être exécutée immédiatement (classe sûre)."""
+    return action in AUTONOMOUS_EXACT or action.startswith(AUTONOMOUS_PREFIXES)
+
+
+async def execute_autonomous(action: str) -> str:
+    """Exécute immédiatement une action de la classe autonome.
+
+    Garde-fou interne : une action critique reçue ici est REFUSÉE (elle doit
+    repasser par propose() -> OUI). Le script PVE re-valide de toute façon
+    le format, mais le refus côté app donne un message clair à l'utilisateur."""
+    if not is_autonomous(action):
+        return (
+            "REFUS: cette action est critique — elle exige une double "
+            "confirmation OUI (demande-la, puis confirme)."
+        )
+    return await _execute(action)
+
+
 # Timeout de confirmation : la proposition expire (évite un OUI tardif qui
 # validerait une action oubliée).
 PENDING_TTL_S = 120
@@ -115,16 +187,28 @@ PENDING_TTL_S = 120
 _PENDING: dict[str, tuple[str, float]] = {}
 
 
+# CT par défaut pour un snapshot sans cible explicite : 103 (arr-stack,
+# la stack la plus souvent mise à jour). Résolu côté app : le script PVE
+# exige un CT numérique dans l'action.
+DEFAULT_SNAP_CT = "103"
+
+
 def detect_action(text: str) -> tuple[str, str] | None:
     """Reconnaît une action autorisée dans le texte.
 
     Renvoie (libellé, action_ssh) ou None. Ne tient pas compte du contexte :
-    l'exécution reste bloquée tant qu'il n'y a pas de confirmation explicite.
+    l'exécution reste bloquée tant qu'il n'y a pas de confirmation explicite
+    (pour la classe critique) ; la classe autonome s'exécute immédiatement
+    (voir is_autonomous).
     """
     for pattern, action in ACTION_PATTERNS:
         match = pattern.search(text)
         if match:
             formatted = action.format(*match.groups()) if match.groups() else action
+            if formatted.startswith("lxc_snap_"):
+                rest = formatted[len("lxc_snap_"):]
+                if not rest.split("_", 1)[0].isdigit():
+                    formatted = f"lxc_snap_{DEFAULT_SNAP_CT}_{rest}"
             return formatted, formatted
     return None
 
@@ -143,14 +227,23 @@ def propose(action: str, user_key: str) -> str:
         pretty = "Sonarr" if app == "sonarr" else "Radarr"
         human = f"rescan de la bibliothèque {pretty} (CT 103)"
     elif action == "docker_updates_scan":
-        human = "scan des mises à jour des images Docker (CT 103/104, rien ne redémarre)"
+        human = "scan des mises à jour des images Docker (CT 103/104/111, rien ne redémarre)"
     elif action == "docker_updates_apply":
-        human = ("mise à jour APPLIQUÉE des conteneurs Docker (CT 103/104) : "
+        human = ("mise à jour APPLIQUÉE des conteneurs Docker (CT 103/104/111) : "
                  "recréation de ceux qui ont une nouvelle image — plusieurs minutes, "
                  "jamais pendant un stream")
     elif action == "docker_updates_list":
-        human = ("inventaire des versions des conteneurs Docker (CT 103/104) : "
+        human = ("inventaire des versions des conteneurs Docker (CT 103/104/111) : "
                  "lecture seule, mais rafraîchit les refs d'images (pull)")
+    elif action == "lxc_snapls":
+        human = "inventaire des snapshots à expiration (lecture seule)"
+    elif action == "pve_fstrim":
+        human = "fstrim du thin pool backup-dumps (réversible, sans effet de bord)"
+    elif action.startswith("lxc_snap_"):
+        rest = action[len("lxc_snap_"):]
+        ct, label = rest.split("_", 1)
+        human = (f"création du snapshot `{label}` du CT {ct} "
+                 "(réversible, purge automatique 7 jours)")
     elif action == "qb_pause_103":
         human = "pause de TOUS les téléchargements qBittorrent (CT 103)"
     elif action == "qb_resume_103":

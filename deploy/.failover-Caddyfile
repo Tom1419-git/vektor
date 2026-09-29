@@ -1,0 +1,165 @@
+# ── Failover HTTPS homelab (CT 104) ──────────────────────────────
+# Même chaîne que le VPS : forward_auth Authelia puis proxy vers le
+# service local. Certificats internes Caddy pour le LAN (tls internal).
+# NB : PAS de « auto_https off » — il désactive l'automatisation des
+# certificats et produit un TLS alert 80 (internal error) au handshake.
+# Le listener :80 (HTTP pur, réseau Docker uniquement) sert au tunnel
+# cloudflared (service http://caddy-failover:80) : pas de double TLS.
+#
+# 28/09 : extension a TOUS les vhosts heberges dans le homelab.
+# Alignement sur le VPS : jellyfin, immich et files SANS Authelia
+# (clients natifs TV/mobile qui ne suivent pas la redirection login ;
+# ils ont leur propre authentification). Tous les autres vhosts =
+# forward_auth Authelia, comme sur le VPS.
+# Vhosts dont le backend vit sur le VPS (jellyseerr, n8n, grafana,
+# vektor, status...) : pas de sens ici, exclus.
+# portainer : le VPS pointe encore 9000 (port mort) -> failover repare
+# sur 9443 HTTPS (a reporter un jour dans le Caddyfile VPS).
+
+(tunnel_sites) {
+	encode gzip
+	forward_auth authelia:9091 {
+		uri /api/verify?rd=https%3A%2F%2Fauth.mayoraz-net.ch
+		copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+		header_up X-Forwarded-Proto https
+	}
+	@proxmenux host proxmenux.mayoraz-net.ch
+	@pegaprox host pegaprox.mayoraz-net.ch
+	@bitmagnet host bitmagnet.mayoraz-net.ch
+	@radarr host radarr.mayoraz-net.ch
+	@sonarr host sonarr.mayoraz-net.ch
+	@prowlarr host prowlarr.mayoraz-net.ch
+	@bazarr host bazarr.mayoraz-net.ch
+	@qbittorrent host qbittorrent.mayoraz-net.ch
+	@portainer host portainer.mayoraz-net.ch
+	@pihole host pihole.mayoraz-net.ch
+	@logs host logs.mayoraz-net.ch
+	@garminmap host garmin-map.mayoraz-net.ch
+	@vault host vault.mayoraz-net.ch
+	handle @proxmenux {
+		reverse_proxy 192.168.1.60:8008
+	}
+	handle @pegaprox {
+		reverse_proxy https://192.168.1.110:5000 {
+			transport http {
+				tls_insecure_skip_verify
+			}
+		}
+	}
+	handle @bitmagnet {
+		reverse_proxy 192.168.1.111:3333
+	}
+	handle @radarr {
+		reverse_proxy 192.168.1.76:7878
+	}
+	handle @sonarr {
+		reverse_proxy 192.168.1.76:8989
+	}
+	handle @prowlarr {
+		reverse_proxy 192.168.1.76:9696
+	}
+	handle @bazarr {
+		reverse_proxy 192.168.1.76:6767
+	}
+	handle @qbittorrent {
+		reverse_proxy 192.168.1.77:8181
+	}
+	handle @portainer {
+		reverse_proxy https://192.168.1.61:9443 {
+			transport http {
+				tls_insecure_skip_verify
+			}
+		}
+	}
+	handle @pihole {
+		reverse_proxy 192.168.1.65:3030
+	}
+	handle @logs {
+		reverse_proxy 192.168.1.61:9999
+	}
+	handle @garminmap {
+		reverse_proxy 192.168.1.61:8085
+	}
+	handle @vault {
+		reverse_proxy 192.168.1.81:80
+	}
+}
+
+http://proxmenux.mayoraz-net.ch, http://pegaprox.mayoraz-net.ch, http://bitmagnet.mayoraz-net.ch, http://radarr.mayoraz-net.ch, http://sonarr.mayoraz-net.ch, http://prowlarr.mayoraz-net.ch, http://bazarr.mayoraz-net.ch, http://qbittorrent.mayoraz-net.ch, http://portainer.mayoraz-net.ch, http://pihole.mayoraz-net.ch, http://logs.mayoraz-net.ch, http://garmin-map.mayoraz-net.ch, http://vault.mayoraz-net.ch {
+	import tunnel_sites
+}
+
+https://proxmenux.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://pegaprox.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://bitmagnet.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://radarr.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://sonarr.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://prowlarr.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://bazarr.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://qbittorrent.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://portainer.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://pihole.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://logs.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://garmin-map.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+https://vault.mayoraz-net.ch {
+	tls internal
+	import tunnel_sites
+}
+
+# ── Bypass Authelia (clients natifs / login applicatif) ──────────
+# jellyfin : clients TV/mobile avec comptes Jellyfin (comme sur VPS)
+http://jellyfin.mayoraz-net.ch, https://jellyfin.mayoraz-net.ch {
+	tls internal
+	encode gzip
+	reverse_proxy 192.168.1.75:8096
+}
+
+# immich : app mobile avec API key (comme sur VPS)
+http://immich.mayoraz-net.ch, https://immich.mayoraz-net.ch {
+	tls internal
+	encode gzip
+	reverse_proxy 192.168.1.88:2283
+}
+
+# files : SFTPGo WebClient, login applicatif parrain
+http://files.mayoraz-net.ch, https://files.mayoraz-net.ch {
+	tls internal
+	encode gzip
+	reverse_proxy 192.168.1.61:8090
+}

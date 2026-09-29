@@ -1,0 +1,8 @@
+[Unit]
+Description=Vektor - watchdog DNS du resolver failover (CT 101)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/dns-watchdog
