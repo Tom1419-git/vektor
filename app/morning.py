@@ -20,6 +20,7 @@ HC_READ_TOKEN = os.environ.get("VEKTOR_HC_READ_TOKEN", "")
 PVE_API_URL = os.environ.get("PVE_API_URL", "https://PVE_HOST:8006")
 PVE_API_TOKEN = os.environ.get("PVE_API_TOKEN", "")
 PVE_VERIFY_SSL = os.environ.get("PVE_VERIFY_SSL", "false").lower() != "true"
+PROM_URL = os.environ.get("VEKTOR_PROM_URL", "http://100.70.222.73:9090")
 
 
 async def _hc_checks() -> list[dict] | None:
@@ -75,6 +76,59 @@ def _parse_textfile(raw: str) -> tuple[dict[str, float], dict[str, float]]:
             except (IndexError, ValueError):
                 continue
     return pools, vg_free
+
+
+async def _prom_query(query: str) -> float | None:
+    """Une seule valeur depuis l'API Prometheus du VPS (None si KO)."""
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            response = await client.get(
+                f"{PROM_URL}/api/v1/query", params={"query": query}
+            )
+    except httpx.HTTPError:
+        return None
+    if response.status_code != 200:
+        return None
+    try:
+        result = response.json().get("data", {}).get("result", [])
+        if not result:
+            return None
+        return float(result[0]["value"][1])
+    except (ValueError, KeyError, IndexError):
+        return None
+
+
+async def _vps_ram_lines() -> list[str]:
+    """RAM VPS (dispo + swap) via node_exporter du VPS, avec tendance 24h.
+
+    Seuils alignés sur la règle RAM-GUARD : alerte push < 5G dispo (le modèle
+    LLM réserve ~5G lors de ses inférences, MC a Xmx10G)."""
+    avail = await _prom_query(
+        'node_memory_MemAvailable_bytes{job="vps-node-exporter"}'
+    )
+    if avail is None:
+        return []
+    swap_used = await _prom_query(
+        'node_memory_SwapTotal_bytes{job="vps-node-exporter"}'
+        ' - node_memory_SwapFree_bytes{job="vps-node-exporter"}'
+    )
+    avail_min = await _prom_query(
+        'min_over_time(node_memory_MemAvailable_bytes'
+        '{job="vps-node-exporter"}[24h])'
+    )
+
+    avail_g = avail / 2**30
+    if avail_g < 5:
+        line = f"🟡 RAM VPS : {avail_g:.1f}G dispo — sous le seuil d'alerte (5G), surveille les gros process"
+    elif avail_g < 8:
+        line = f"🟡 RAM VPS : {avail_g:.1f}G dispo — marge modérée"
+    else:
+        line = f"🟢 RAM VPS : {avail_g:.1f}G dispo"
+    if swap_used is not None:
+        line += f", swap {swap_used / 2**30:.1f}G utilisés"
+    if avail_min is not None:
+        line += f" (min 24h : {avail_min / 2**30:.1f}G)"
+    return [line]
 
 
 async def _lvm_lines() -> list[str]:
@@ -161,6 +215,12 @@ async def morning_report() -> str:
     if lvm:
         lines.append("🗄️ Stockage PVE :")
         lines.extend(f"   {line}" for line in lvm)
+
+    # 2bis. RAM VPS : dispo + swap + tendance 24h (node_exporter VPS)
+    vps_ram = await _vps_ram_lines()
+    if vps_ram:
+        lines.append("")
+        lines.extend(vps_ram)
 
     # 3. Compliance : score CIS-L1 PegaProx (régression = ligne + action)
     cis_regression, cis_lines = await _cis_line()
