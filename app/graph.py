@@ -167,7 +167,10 @@ async def _invoke_with_tools(llm, messages: list, max_rounds: int = 3) -> str:
 async def _pick_llm(base_url: str, model: str) -> ChatOllama:
     """Construit le LLM pour l'endpoint demandé (pas d'attribut timeout sur
     ChatOllama : le plafond effectif est le timeout HTTP du canal appelant)."""
-    return ChatOllama(base_url=base_url, model=model, temperature=0.1, keep_alive="2h")
+    # keep_alive borné à 5m : règle RAM-GUARD (17/09) — le serveur MC partage
+    # le VPS, un modèle résident long le met en OOM (cf. incidents 17/09 et
+    # 01-02/10). Première question d'une salve ~15-40 s, les suivantes ~15 s.
+    return ChatOllama(base_url=base_url, model=model, temperature=0.1, keep_alive="5m")
 
 
 async def select_llm() -> tuple[ChatOllama, str]:
