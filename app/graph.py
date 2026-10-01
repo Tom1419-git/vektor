@@ -121,7 +121,15 @@ async def recherche_bibliotheque(query: str) -> str:
     return await t.jellyfin_search(query)
 
 
-READONLY_TOOLS = [etat_proxmox, liste_conteneurs, etat_stockage, inventaire_docker, statut_service, rapport_seeds, derniers_backups, etat_dns, etat_monitoring, recherche_bibliotheque]
+@tool
+async def info_externes() -> str:
+    """Informations externes utiles au diagnostic : statut global Cloudflare
+    (incident en cours ?), IP publique du foyer (dérive home-ip-monitor),
+    dérive d'horloge NTP du serveur. Sources publiques sans clé."""
+    from . import extinfo
+    return await extinfo.external_report()
+
+READONLY_TOOLS = [etat_proxmox, liste_conteneurs, etat_stockage, inventaire_docker, statut_service, rapport_seeds, derniers_backups, etat_dns, etat_monitoring, recherche_bibliotheque, info_externes]
 TOOLS_BY_NAME = {tool_item.name: tool_item for tool_item in READONLY_TOOLS}
 
 
@@ -199,10 +207,12 @@ async def run_agent(memory: Memory, text: str, history: list[dict[str, str]], us
         action = detected[1]
         if actions.is_autonomous(action):
             result = await actions.execute_autonomous(action)
-            return (
-                "🤖 Action autonome exécutée (réversible, sans confirmation) :\n"
-                f"{result}"
+            prefix = (
+                "🩺 Diagnostic exécuté (lecture seule) :\n"
+                if action.startswith("diagnose_")
+                else "🤖 Action autonome exécutée (réversible, sans confirmation) :\n"
             )
+            return f"{prefix}{result}"
         already = actions._pending_notice(user_key)
         if already:
             return already

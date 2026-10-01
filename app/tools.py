@@ -410,6 +410,18 @@ async def infra_live_report(text: str) -> str | None:
         for name in services[:3]:
             parts.append(await check_service(name))
 
+    # Info externe (v1.8.0) : cloudflare / ip publique / horloge — sans LLM
+    if re.search(r"\b(cloudflare|cf\s+status|ip\s+publique|adresse\s+ip\s+publique|d[ée]rive\s+horloge)\b", low):
+        from . import extinfo
+        if re.search(r"\bcloudflare|cf\s+status\b", low):
+            parts.append(await extinfo.cloudflare_status())
+        if re.search(r"\bip\s+publique|adresse\s+ip\s+publique\b", low):
+            parts.append(await extinfo.public_ip())
+        if re.search(r"\bd[ée]rive\s+horloge\b", low):
+            parts.append(await extinfo.clock_check())
+        if parts:
+            return "\n\n".join(p for p in parts if p)
+
     is_explanation = any(word in low for word in _EXPLAIN_WORDS)
     full = any(k in low for k in ["homelab", "état général", "etat general", "vue d'ensemble"])
     # Alexa n'envoie que le slot extrait (ex: "proxmox", sans "état") :

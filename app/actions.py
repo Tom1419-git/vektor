@@ -143,6 +143,41 @@ ACTION_PATTERNS: list[tuple[re.Pattern, str]] = [
         re.compile(r"\b(?:reprends?|relance|r[ée]active|red[ée]marre?)\w*\s+(?:tous\s+|les\s+|des\s+|tout(?:es)?\s+)*(?:les\s+|des\s+)?t[ée]l[ée]chargements?\b", re.I),
         "qb_resume_103",
     ),
+    # ── Diagnostics lecture seule (v1.8.0 — agent de diagnostic) ──
+    # /diag [cible] : rapport d'état nommant le maillon défaillant.
+    # Cibles : pve, net, media, services, failover, docker_<ct>, disk_<ct>
+    (
+        re.compile(r"^/diag\s*$", re.I),
+        "diagnose_pve",
+    ),
+    (
+        re.compile(r"^/diag\s+(pve|net|media|services|failover)\s*$", re.I),
+        "diagnose_{0}",
+    ),
+    (
+        re.compile(r"^/diag\s+(?:docker\s+)?(CT\s*)?(101|102|103|104|105|106|107|108|109|110|111)\s*$", re.I),
+        "diagnose_docker_{1}",
+    ),
+    (
+        re.compile(r"^/diag\s+disque?s?\s+(?:CT\s*)?(101|102|103|104|105|106|107|108|109|110|111)\s*$", re.I),
+        "diagnose_disk_{0}",
+    ),
+    (
+        re.compile(r"\b(?:diagnosti[qc]u?e?|[ée]tat\s+d[ée]taill[ée]|sant[ée])\w*\s+(?:du\s+|de\s+la\s+|de\s+l')?(?:pve|hyperviseur|syst[èe]me)\b", re.I),
+        "diagnose_pve",
+    ),
+    (
+        re.compile(r"\b(?:diagnosti[qc]u?e?|[ée]tat|test)\w*\s+(?:du\s+|de\s+la\s+)?r[ée]seau\b", re.I),
+        "diagnose_net",
+    ),
+    (
+        re.compile(r"\b(?:diagnosti[qc]u?e?|[ée]tat)\w*\s+(?:du\s+|de\s+la\s+)?(?:m[ée]dia|jellyfin|transcodage)\b", re.I),
+        "diagnose_media",
+    ),
+    (
+        re.compile(r"\b(?:diagnosti[qc]u?e?|[ée]tat)\w*\s+(?:du\s+)?failover(?:\s+dns)?\b", re.I),
+        "diagnose_failover",
+    ),
 ]
 
 # Classe autonome (v1.7.0) : actions exécutables SANS confirmation OUI.
@@ -155,8 +190,13 @@ AUTONOMOUS_EXACT = frozenset({
     "lxc_snapls",
     "docker_updates_scan",
     "docker_updates_list",
+    "diagnose_pve",
+    "diagnose_net",
+    "diagnose_media",
+    "diagnose_services",
+    "diagnose_failover",
 })
-AUTONOMOUS_PREFIXES = ("lxc_snap_",)
+AUTONOMOUS_PREFIXES = ("lxc_snap_", "diagnose_disk_", "diagnose_docker_")
 
 
 def is_autonomous(action: str) -> bool:
@@ -248,6 +288,20 @@ def propose(action: str, user_key: str) -> str:
         human = "pause de TOUS les téléchargements qBittorrent (CT 103)"
     elif action == "qb_resume_103":
         human = "reprise de TOUS les téléchargements qBittorrent (CT 103)"
+    elif action == "diagnose_pve":
+        human = "diagnostic complet du PVE (lecture seule)"
+    elif action == "diagnose_net":
+        human = "diagnostic réseau PVE→VPS + DNS (lecture seule)"
+    elif action == "diagnose_media":
+        human = "diagnostic média Jellyfin/Tdarr/qBit (lecture seule)"
+    elif action == "diagnose_services":
+        human = "état des Healthchecks (lecture seule)"
+    elif action == "diagnose_failover":
+        human = "état des gardiens de failover DNS/SSO (lecture seule)"
+    elif action.startswith("diagnose_docker_"):
+        human = f"état des conteneurs Docker du CT {action[len('diagnose_docker_'):]} (lecture seule)"
+    elif action.startswith("diagnose_disk_"):
+        human = f"usage disque du CT {action[len('diagnose_disk_'):]} (lecture seule)"
     else:
         human = action
     return (

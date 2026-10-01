@@ -663,6 +663,9 @@ _WEB_COMMANDS: dict[str, object] = {
     # /majlist : inventaire versions (lecture seule) via le canal d'actions —
     # pull des refs d'images : jusqu'à quelques minutes.
     "/majlist": lambda: __import__("app.actions", fromlist=["_execute"])._execute("docker_updates_list"),
+    # /diag : diagnostics lecture seule (v1.8.0) — classe autonome, sans
+    # confirmation, rapport direct nommant le maillon défaillant.
+    "/diag": lambda: __import__("app.actions", fromlist=["execute_autonomous"]).execute_autonomous("diagnose_pve"),
     # /pause et /resume ne sont PAS des commandes directes : ils passent
     # par le chemin agent (proposition + confirmation OUI, registre partagé
     # avec Telegram). Délibéré : une écriture ne doit jamais être un simple
