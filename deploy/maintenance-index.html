@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>État des services — mayoraz-net.ch</title>
+<style>
+:root{color-scheme:dark}
+body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;display:grid;place-items:center;min-height:100vh}
+main{max-width:42rem;padding:2rem;text-align:center}
+h1{font-size:1.6rem;margin:0 0 .5rem}
+p{line-height:1.6}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:1.25rem;margin:1.25rem auto;text-align:left}
+.badge{display:inline-block;padding:.2rem .7rem;border-radius:999px;font-size:.85rem;font-weight:600}
+.badge.ok{background:#14532d;color:#bbf7d0}
+.badge.incident{background:#7f1d1d;color:#fecaca}
+a{color:#7dd3fc}
+.meta{color:#94a3b8;font-size:.85rem}
+</style>
+</head>
+<body>
+<main>
+<h1>mayoraz-net.ch</h1>
+<p id="state"><span class="badge ok">Aucun incident déclaré</span></p>
+<div class="card" id="details" hidden></div>
+<p>Cette page est servie en repli quand l'infrastructure principale est indisponible.</p>
+<p class="meta">Gardiens automatiques : Vektor (auto-réparation) · sso-switch (failover SSO) · Uptime Kuma (détection)</p>
+<p><a href="https://status.mayoraz-net.ch">Tableau de bord de disponibilité</a></p>
+</main>
+<script>
+fetch('incident.json').then(r => { if (!r.ok) throw 0; return r.json(); }).then(inc => {
+  if (!inc || !inc.active) return;
+  document.getElementById('state').innerHTML = '<span class="badge incident">Incident en cours</span>';
+  const d = document.getElementById('details');
+  d.hidden = false;
+  d.textContent = (inc.title || 'Incident') + ' — ' + (inc.message || '') + ' (depuis ' + (inc.since || '—') + ')';
+}).catch(() => {});
+</script>
+</body>
+</html>
