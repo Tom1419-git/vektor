@@ -144,7 +144,12 @@ async def grafana_webhook_endpoint(request: Request):
     from .selfheal import handle_grafana_webhook
 
     summary = await handle_grafana_webhook(payload)
-    return {"acted": summary["acted"], "skipped_count": len(summary["skipped"])}
+    return {
+        "acted": summary["acted"],
+        "skipped_count": len(summary["skipped"]),
+        "reports_generated": summary["reports_generated"],
+        "reports_sent": summary["reports_sent"],
+    }
 
 
 @app.post("/api/chat", response_model=ChatResponse)

@@ -351,8 +351,18 @@ def _pending_notice(user_key: str) -> str | None:
 async def _execute(action: str) -> str:
     if not os.path.exists(ACTIONS_SSH_KEY):
         return "Canal d'actions non configuré (clé absente). Refus."
-    # Le scan/apply des updates pull de vraies images : plusieurs minutes.
-    timeout = 900 if action.startswith("docker_updates_") else 120
+    # Updates pull de vraies images ; le selfheal média attend aussi les probes
+    # post-restart (jusqu'à 52 s), plus le démarrage du service/CT.
+    if action.startswith("docker_updates_"):
+        timeout = 900
+    elif action in {
+        "selfheal_media_jellyfin", "selfheal_media_immich", "selfheal_media_authelia",
+        "selfheal_media_reset_jellyfin", "selfheal_media_reset_immich",
+        "selfheal_media_reset_authelia",
+    }:
+        timeout = 240
+    else:
+        timeout = 120
     try:
         proc = await asyncio.create_subprocess_exec(
             "ssh",
